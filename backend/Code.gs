@@ -18,7 +18,7 @@ function doGet() {
 }
 
 /* ========== PWA 入口（app.housenaid.com 透過 POST 呼叫） ========== */
-const CLIENT_ID = '';            // Google 登入用戶端 ID（建立後填入）
+const CLIENT_ID = '473235039295-dnrf8007tmjrnt93m09e4qli00qa473l.apps.googleusercontent.com'; // Google 登入用戶端 ID
 const DOMAIN = 'housenaid.com';  // 只允許公司網域帳號
 const SESSION_DAYS = 30;         // 登入有效天數
 
