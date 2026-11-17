@@ -1,0 +1,47 @@
+# 浩森工作｜浩森設計工作管理系統（PWA）
+
+網址：https://app.housenaid.com
+擁有者：浩森室內設計（林柏元）
+
+## 架構
+
+| 層 | 放在哪 | 內容 |
+|---|---|---|
+| 前端（PWA） | 這個 GitHub 程式庫 → GitHub Pages | `index.html`（全部畫面）、`config.js`、`sw.js`、`manifest.webmanifest`、`icons/` |
+| 後端 API | Google Apps Script 專案「浩森設計工作管理系統_網頁版」（pthz@housenaid.com 的雲端硬碟） | `Code.gs`：登入驗證、權限、讀寫資料 |
+| 資料庫 | Google Sheet「浩森設計工作管理系統_資料庫」（共用雲端硬碟／資料庫） | 案件、工程日誌、日誌照片、主管指示、待辦、人員、工種清單… |
+| 照片 | 資料庫試算表旁的 `日誌照片_Images` 資料夾 | 與 AppSheet 共用 |
+
+前端只負責畫面，所有讀寫都 POST 到後端 API；後端以表頭名稱對應欄位，改欄位順序不會壞。
+
+## 登入與權限
+
+1. 使用者在登入頁按「使用 Google 登入」，Google 回傳身分憑證。
+2. 後端驗證憑證：來源必須是本系統的用戶端 ID、帳號必須是 @housenaid.com、且在「人員」表中「在職」不是 N。
+3. 通過後發一組 30 天有效的工作階段憑證（HMAC 簽章，密鑰存在 Apps Script 指令碼屬性 `SESSION_SECRET`）。
+4. 要讓某人立刻失去權限：把「人員」表的「在職」改成 N。要讓所有人重新登入：刪除指令碼屬性 `SESSION_SECRET`。
+
+角色：系統角色為 `Boss`、`主管` 可下指示、指派待辦、管理工種；`行政` 可新增案件；其他人可寫日誌、修改任何日誌（系統記錄最後修改人）、管理自己的待辦。
+
+`Code.gs` 的 `TEST_MODE = true` 時，Boss 首頁可切換「看某某的畫面」（唯讀）。正式上線改成 `false`。
+
+## 更新流程
+
+- **改畫面**：改 `index.html` → 把 `sw.js` 的 `VERSION` 加一 → 推到 GitHub。使用者下次開 App 會看到「有新版本，點一下更新」。**忘了改 VERSION，使用者會一直看到舊版。**
+- **改後端**：在 Apps Script 編輯器改 `Code.gs` → 儲存 → 部署 → 管理部署作業 → 編輯「API」部署 → 版本選「建立新版本」→ 部署。網址不變。
+- **新增欄位**：直接在試算表最右邊加欄位，再在 `Code.gs` 用表頭名稱讀寫。
+
+## 設定值（config.js）
+
+- `API_URL`：Apps Script「API」部署的網址（以「我」的身分執行、任何人皆可存取；安全性由登入驗證負責）
+- `CLIENT_ID`：Google Cloud 專案的 OAuth 用戶端 ID（內部應用程式，限公司網域），同一個值也要填在 `Code.gs` 的 `CLIENT_ID`
+
+## 網域
+
+`app.housenaid.com` 在 housenaid.com 的 DNS 設一筆 CNAME 指向 GitHub Pages。`CNAME` 檔案不要刪。
+
+## 已知限制
+
+- 資料不是即時同步：開啟 App、切回前景、下拉、或每 3 分鐘自動更新。
+- App 關閉時的手機推播尚未做（第二階段，iPhone 需 iOS 16.4 以上且加到主畫面）。
+- 未來可用 Capacitor 包成 iOS／Android App，沿用同一份前端。

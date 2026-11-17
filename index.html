@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>浩森工作</title>
+<meta name="theme-color" content="#f7f4ef">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="浩森工作">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<script src="config.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#ebe6df;--app:#f7f4ef;--card:#fff;--ink:#2b2724;--muted:#8a7f75;--line:#e7e0d6;--acc:#8a6a4b;--acc2:#efe5da;
+--ok:#4f7a5c;--ok2:#e3eee5;--warn:#b9773a;--warn2:#f7e9d9;--bad:#b0483c;--bad2:#f6e1dd;--info:#5b6f8c;--info2:#e3e9f1}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg)}
+body{font-family:"Noto Sans TC",system-ui,-apple-system,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+.app{max-width:560px;margin:0 auto;background:var(--app);min-height:100vh;position:relative;display:flex;flex-direction:column}
+@media(min-width:600px){.app{margin:16px auto;min-height:calc(100vh - 32px);border-radius:22px;overflow:hidden;box-shadow:0 10px 40px rgba(60,40,20,.12)}}
+.top{padding:calc(14px + env(safe-area-inset-top)) 16px 10px;background:var(--app);position:sticky;top:0;z-index:5;border-bottom:1px solid var(--line)}
+.brand{font-size:10px;letter-spacing:.22em;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.brand a{letter-spacing:.05em;color:var(--acc);cursor:pointer;font-size:12px}
+.top h1{font-family:"Noto Serif TC",serif;font-size:21px;margin:4px 0 0;font-weight:700}
+.top h1.big{font-size:26px;letter-spacing:.06em}
+.sub{margin-top:8px;font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.sub b{color:var(--ink);font-weight:500}.sub b.bad{color:var(--bad)}
+.back{display:inline-block;background:var(--ink);color:#fff;border-radius:99px;padding:5px 12px 5px 10px;font-size:13px;letter-spacing:.08em;cursor:pointer;border:0;font-family:inherit}
+.pv{display:flex;gap:6px;overflow-x:auto;margin-top:10px;padding-bottom:2px}
+.pv button{flex:0 0 auto;border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 11px;font:inherit;font-size:12px;color:var(--muted);cursor:pointer}
+.pv button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.pvbar{background:var(--warn2);color:var(--warn);font-size:12px;padding:7px 12px;border-radius:10px;margin-top:8px}
+main{flex:1;padding:14px 14px 110px}
+.nav{position:sticky;bottom:0;display:grid;grid-template-columns:repeat(6,1fr);background:#fff;border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom));z-index:6}
+.nav button{border:0;background:none;font:inherit;font-size:11px;color:var(--muted);padding:6px 0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative}
+.nav button .ic{font-size:17px;line-height:1}
+.nav button.on{color:var(--ink);font-weight:500}
+.badge{position:absolute;top:2px;right:18%;background:var(--bad);color:#fff;font-size:10px;border-radius:99px;min-width:16px;height:16px;line-height:16px;padding:0 4px}
+h2{font-family:"Noto Serif TC",serif;font-size:16px;margin:18px 2px 10px;display:flex;align-items:baseline;gap:6px}
+h2:first-child{margin-top:4px}
+h2 small{font-family:"Noto Sans TC";font-weight:400;font-size:12px;color:var(--muted)}
+h2 .act{margin-left:auto;font-family:"Noto Sans TC";font-weight:400;font-size:13px;color:var(--acc);cursor:pointer}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:9px}
+.tap{cursor:pointer;transition:transform .08s}.tap:active{transform:scale(.99)}
+.row2{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.t{font-weight:500;font-size:14.5px}
+.s{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.55}
+.s .bad{color:var(--bad)}
+.mini{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:var(--muted);margin-top:8px}
+.chip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.c-ok{background:var(--ok2);color:var(--ok)}.c-warn{background:var(--warn2);color:var(--warn)}.c-bad{background:var(--bad2);color:var(--bad)}.c-info{background:var(--info2);color:var(--info)}.c-mute{background:#f0ebe4;color:#7a7067}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:6px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
+.kpi .n{font-family:"Noto Serif TC",serif;font-size:26px;font-weight:700}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi.warn .n{color:var(--warn)}.kpi.bad .n{color:var(--bad)}
+.seg{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.seg button{flex:1;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 6px;font:inherit;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.seg button.on{border-color:var(--ink);color:var(--ink);font-weight:500}
+.btn{border:0;border-radius:12px;padding:11px 14px;font:inherit;font-size:14px;cursor:pointer}
+.btn.pri{background:var(--ink);color:#fff}.btn.sec{background:var(--acc2);color:var(--acc)}.btn.ok{background:var(--ok);color:#fff}.btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+.btn.sm{padding:7px 12px;font-size:13px;border-radius:10px}
+.btns{display:flex;gap:8px;margin-top:10px}.btns .btn{flex:1}
+.fab{position:fixed;right:max(16px,calc(50% - 264px));bottom:calc(78px + env(safe-area-inset-bottom));background:var(--ink);color:#fff;border:0;border-radius:99px;padding:13px 18px;font:inherit;font-size:14px;box-shadow:0 6px 18px rgba(0,0,0,.18);cursor:pointer;z-index:7}
+.fab.home{bottom:calc(22px + env(safe-area-inset-bottom))}
+.todo{display:flex;gap:11px;align-items:flex-start;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.todo:last-child{border-bottom:0}
+.ck{flex:0 0 22px;height:22px;border-radius:50%;border:1.6px solid #c9beb0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;margin-top:1px}
+.todo.done .ck{background:var(--ok);border-color:var(--ok)}
+.todo.done .tt{color:var(--muted);text-decoration:line-through}
+.ck.ins{border-radius:6px;border-color:var(--acc);color:var(--acc);font-size:11px}
+.tt{font-size:14px;line-height:1.5}
+.tl{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.more{font-size:12.5px;color:var(--acc);text-align:center;padding:10px;cursor:pointer}
+.info{display:grid;grid-template-columns:84px 1fr;gap:7px 10px;font-size:13.5px}
+.info dt{color:var(--muted);font-size:12.5px}.info dd{margin:0}
+.info a{color:var(--acc);text-decoration:none}
+.month{font-size:12px;color:var(--muted);letter-spacing:.12em;margin:14px 2px 6px}
+.lgroup{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.lrow{border-bottom:1px solid var(--line)}.lrow:last-child{border-bottom:0}
+.lhead{display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:pointer}
+.lrow.open .lhead{background:#fbf7f1}
+.caret{color:var(--muted);font-size:11px;width:10px;transition:transform .15s}.lrow.open .caret{transform:rotate(90deg)}
+.ld{font-size:14px;font-weight:500;white-space:nowrap}
+.lgs{display:flex;gap:4px;flex-wrap:wrap;flex:1}
+.tchip{display:inline-block;color:#fff;font-size:11px;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.late{font-size:10.5px;color:var(--warn);background:var(--warn2);border-radius:6px;padding:1px 6px;white-space:nowrap}
+.idot{width:8px;height:8px;border-radius:50%;background:var(--bad);flex:0 0 8px}
+.icount{font-size:10px;background:var(--acc);color:#fff;border-radius:99px;padding:1px 6px}
+.lby{font-size:12px;color:var(--muted);white-space:nowrap}
+.lbody{padding:4px 12px 14px 30px;font-size:13.5px;line-height:1.7;display:none}
+.lrow.open .lbody{display:block}
+.stamp{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+.issue{margin-top:8px;background:var(--bad2);color:var(--bad);border-radius:9px;padding:7px 10px;font-size:12.5px}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.pc{position:relative;aspect-ratio:4/3;border-radius:9px;overflow:hidden;background:linear-gradient(135deg,#d9cfc3,#bfb2a2);cursor:pointer}
+.pc img{width:100%;height:100%;object-fit:cover;display:block}
+.pc span{position:absolute;left:0;right:0;bottom:0;padding:3px 6px;font-size:10px;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.instr{margin-top:10px;border-left:3px solid var(--acc);background:#fbf7f1;padding:8px 10px;border-radius:0 9px 9px 0;font-size:12.5px;line-height:1.6}
+.instr .who{color:var(--muted);font-size:11.5px}
+.reply{margin-top:6px;padding:6px 9px;background:#fff;border-radius:8px;font-size:12.5px;white-space:pre-wrap}
+.empty{font-size:13px;color:var(--muted);text-align:center;padding:22px 0}
+.soon{text-align:center;padding:50px 20px;color:var(--muted);font-size:13.5px;line-height:1.8}
+.soon b{display:block;font-family:"Noto Serif TC",serif;font-size:17px;color:var(--ink);margin-bottom:6px}
+.mask{position:fixed;inset:0;background:rgba(30,20,10,.35);z-index:20;display:none}
+.sheet{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:560px;max-height:92vh;overflow:auto;background:var(--app);border-radius:20px 20px 0 0;z-index:21;padding:8px 16px calc(24px + env(safe-area-inset-bottom));display:none}
+.sheet .x{position:sticky;top:0;float:right;border:0;background:#e9e2d8;border-radius:99px;width:30px;height:30px;font-size:15px;cursor:pointer;color:#5a5048;z-index:2}
+.grab{width:40px;height:4px;border-radius:9px;background:#d4cabd;margin:6px auto 12px}
+.sheet h3{font-family:"Noto Serif TC",serif;margin:0 0 4px;font-size:18px}
+label{display:block;font-size:12px;color:var(--muted);margin:14px 0 6px}
+input,select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;font-size:15px;background:#fff;color:var(--ink);-webkit-appearance:none;appearance:none}
+textarea{min-height:84px;resize:vertical}
+.tpick{display:flex;flex-wrap:wrap;gap:6px}
+.tpick button{border:1.5px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;color:var(--ink);cursor:pointer}
+.tpick button.on{color:#fff}
+.tpick button.other{border-style:dashed;color:var(--acc)}
+.otherrow{display:none;gap:6px;margin-top:8px}.otherrow input{flex:1}
+.addph{display:flex;align-items:center;justify-content:center;gap:6px;border:1.5px dashed #c8b9a6;border-radius:12px;padding:16px;color:var(--acc);font-size:14px;cursor:pointer;background:#fff}
+.phl{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.phi{display:flex;gap:8px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px}
+.phi img,.phi .ph0{width:64px;height:48px;object-fit:cover;border-radius:6px;flex:0 0 64px;background:#ddd}
+.phi input{padding:8px;font-size:14px}
+.phi .rm{border:0;background:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px}
+.hint{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5}
+.sw{display:flex;gap:6px;flex-wrap:wrap}.sw i{width:26px;height:26px;border-radius:7px;cursor:pointer;border:2px solid transparent}.sw i.on{border-color:var(--ink)}
+.toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);background:var(--ink);color:#fff;font-size:13px;padding:10px 16px;border-radius:12px;opacity:0;transition:.2s;z-index:40;pointer-events:none;max-width:86%;text-align:center}
+.toast.show{opacity:.95}
+.loading{position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(247,244,239,.6);z-index:50;font-size:13px;color:var(--muted);display:none}
+.spin{width:26px;height:26px;border:3px solid #e2d8cb;border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite;margin-right:10px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.boot{padding:80px 20px;text-align:center;color:var(--muted)}
+.boot .logo{font-family:"Noto Serif TC",serif;font-size:22px;color:var(--ink);letter-spacing:.2em;margin-bottom:8px}
+.login{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;text-align:center}
+.login .mark{width:84px;height:84px;border-radius:22px;background:var(--ink);color:#f3ede4;display:flex;align-items:center;justify-content:center;font-family:"Noto Serif TC",serif;font-size:26px;letter-spacing:.06em;box-shadow:0 10px 30px rgba(43,39,36,.25)}
+.login h1{font-family:"Noto Serif TC",serif;font-size:24px;margin:22px 0 6px;letter-spacing:.08em}
+.login p{color:var(--muted);font-size:13.5px;line-height:1.7;margin:0 0 26px}
+.login .gbtn{min-height:44px}
+.login .lerr{color:var(--bad);font-size:13px;margin-top:16px;min-height:20px}
+.login .foot{position:absolute;bottom:calc(18px + env(safe-area-inset-bottom));left:0;right:0;font-size:11px;color:var(--muted);letter-spacing:.2em}
+.upd{position:fixed;left:50%;transform:translateX(-50%);top:calc(10px + env(safe-area-inset-top));z-index:60;background:var(--ink);color:#fff;border-radius:99px;padding:10px 16px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2);cursor:pointer;display:none;white-space:nowrap}
+.ptr{position:fixed;left:50%;top:calc(8px + env(safe-area-inset-top));transform:translate(-50%,-60px);z-index:30;background:#fff;border:1px solid var(--line);border-radius:99px;padding:6px 12px;font-size:12px;color:var(--muted);transition:transform .15s}
+.newdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--bad);margin-right:6px;vertical-align:middle}
+.tip{background:var(--info2);color:var(--info);border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.6;margin-bottom:12px;position:relative}
+.tip b{font-weight:500}.tip .tx{position:absolute;right:8px;top:6px;cursor:pointer}
+.err{background:var(--bad2);color:var(--bad);border-radius:12px;padding:14px;font-size:13.5px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top" id="top"></div>
+  <main id="main"><div class="boot"><div class="logo">浩 森</div>載入中…</div></main>
+  <nav class="nav" id="nav" style="display:none"></nav>
+</div>
+<button class="fab" id="fab" style="display:none"></button>
+<div class="mask" id="mask"></div>
+<div class="sheet" id="sheet"></div>
+<div class="toast" id="toast"></div>
+<div class="upd" id="upd">有新版本，點一下更新</div>
+<div class="ptr" id="ptr">放開以重新整理</div>
+<div class="loading" id="loading"><div class="spin"></div><span id="loadmsg">處理中…</span></div>
+
+<script>
+const S = { home: null, real: null, as: '', cur: null, data: null, tab: 'sum', filter: 'all', open: {}, thumbs: {}, insFilter: 'open', showDone: false };
+
+const TOKEN_KEY = 'housen_token';
+const API = async (action, payload) => {
+  const p = Object.assign({ as: S.as }, payload || {});
+  if (window.MOCK) return MOCK(action, p);
+  let r;
+  try {
+    r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action, payload: p, token: localStorage.getItem(TOKEN_KEY) }) });
+  } catch (e) { throw '網路連線失敗，請檢查網路後再試'; }
+  const j = await r.json();
+  if (!j.ok) { if (j.auth) { localStorage.removeItem(TOKEN_KEY); showLogin(j.error); } throw j.error; }
+  return j.data;
+};
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pname = id => ((S.home.people.find(p => p.id === id) || {}).name) || id || '';
+const short = n => n && n.length >= 3 ? n.slice(-2) : n;
+const tcolor = n => ((S.home.trades.find(t => t.name === n) || {}).color) || '#8a7f75';
+const md = d => { if (!d) return ''; const p = String(d).split(/[\/\- ]/); return p.length >= 3 ? (+p[1]) + '/' + (+p[2]) : d; };
+const dnum = d => { const p = String(d || '').split(/[\/\- ]/); return p.length >= 3 ? new Date(+p[0], +p[1] - 1, +p[2]).getTime() : 0; };
+const days = (a, b) => Math.round((dnum(a) - dnum(b)) / 86400000);
+const ME = () => S.home.me;
+const leader = () => !!ME().leader;
+const preview = () => !!ME().preview;
+const canCase = () => leader() || ME().role === '行政';
+
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
+function busy(on, msg) { $('#loading').style.display = on ? 'flex' : 'none'; $('#loadmsg').textContent = msg || '處理中…'; }
+function sheet(html) { $('#sheet').innerHTML = '<button class="x" onclick="closeSheet()">✕</button><div class="grab"></div>' + html; $('#sheet').style.display = 'block'; $('#mask').style.display = 'block'; $('#sheet').scrollTop = 0; }
+function closeSheet() { $('#sheet').style.display = 'none'; $('#mask').style.display = 'none'; }
+$('#mask').onclick = closeSheet;
+function guard() { if (preview()) { toast('預覽模式只能看，不能存檔'); return true; } return false; }
+
+const STAGE_CLS = { '洽談': 'c-mute', '提案': 'c-info', '設計': 'c-info', '開案前': 'c-warn', '施工': 'c-ok', '結案': 'c-mute' };
+const STAGES = ['洽談', '提案', '設計', '開案前', '施工', '結案'];
+const INS_CLS = { '處理中': 'c-info', '待確認': 'c-warn', '已結案': 'c-ok' };
+const chip = (t, cls) => `<span class="chip ${cls || 'c-mute'}">${esc(t)}</span>`;
+const COLORS = ['#9A9086', '#8A6A4B', '#5B6F8C', '#4F8A8B', '#B9773A', '#6E8FA6', '#A0794F', '#6D6359', '#4F7A5C', '#A88BA0', '#C9A227', '#B0483C'];
+
+async function boot() {
+  if (!window.MOCK && !localStorage.getItem(TOKEN_KEY)) return showLogin();
+  try { S.home = await API('home'); if (!S.real) S.real = S.home.me; S.lastLoad = Date.now(); notifyNew(); renderHome(); }
+  catch (e) { if (localStorage.getItem(TOKEN_KEY) || window.MOCK) $('#main').innerHTML = `<div class="err">無法載入：${esc(e)}</div>`; }
+}
+async function reloadHome() { S.home = await API('home'); }
+
+function dueTxt(due, done) {
+  if (!due) return '';
+  if (done) return '期限 ' + esc(md(due));
+  const d = days(due, S.home.today);
+  if (d < 0) return `<span class="bad">逾期 ${-d} 天（${esc(md(due))}）</span>`;
+  if (d === 0) return '<span class="bad">今天到期</span>';
+  return '期限 ' + esc(md(due)) + (d <= 2 ? `（剩 ${d} 天）` : '');
+}
+
+function renderHome() {
+  S.cur = null; S.data = null; closeSheet();
+  const h = S.home, me = h.me;
+  $('#nav').style.display = 'none';
+  const open = h.items.filter(i => i.kind === 'ins' ? true : !i.done);
+  const late = open.filter(i => i.due && days(i.due, h.today) < 0 && !(i.kind === 'ins' && i.status === '待確認' && i.mine));
+  const doneToday = h.items.filter(i => i.kind === 'todo' && i.done && String(i.doneAt).slice(0, 10) === h.today);
+  $('#top').innerHTML = `<div class="brand"><span>浩森設計工作管理系統</span><span>${leader() && !preview() ? '<a id="admin">⚙ 工種設定</a>　' : ''}<a id="logout">登出</a></span></div>
+    <h1 class="big">${esc(short(me.name))}工作總表</h1>
+    <div class="sub"><span>${esc(md(h.today))}</span><b>還有 ${open.length} 件事沒做完</b>${late.length ? `<b class="bad">・${late.length} 件逾期</b>` : ''}</div>
+    ${h.testMode && S.real && S.real.role === 'Boss' ? `<div class="pv"><button data-as="" class="${!S.as ? 'on' : ''}">我的畫面</button>${h.people.filter(p => p.id !== S.real.id).map(p => `<button data-as="${p.id}" class="${S.as === p.id ? 'on' : ''}">看 ${esc(short(p.name))}</button>`).join('')}</div>` : ''}
+    ${preview() ? `<div class="pvbar">預覽中：這是 ${esc(me.name)} 看到的畫面（只能看，不能存檔）</div>` : ''}`;
+  $$('[data-as]').forEach(b => b.onclick = async () => { S.as = b.dataset.as; busy(true, '切換中…'); try { await reloadHome(); renderHome(); } catch (e) { toast(e); } busy(false); });
+  if ($('#admin')) $('#admin').onclick = tradeAdmin;
+  $('#logout').onclick = logout;
+
+  const sorted = open.slice().sort((a, b) => (dnum(a.due) || 9e15) - (dnum(b.due) || 9e15));
+  let html = installTip() + `<h2>我的待辦<small>${open.length} 件未完成</small><span class="act" id="addTodo">＋ 新增</span></h2><div class="tl">`;
+  html += sorted.length ? sorted.map(itemHTML).join('') : '<div class="empty">都做完了 👍</div>';
+  if (doneToday.length) {
+    html += `<div class="more" id="tgDone">${S.showDone ? '收起' : '今天完成 ' + doneToday.length + ' 件'}</div>`;
+    if (S.showDone) html += doneToday.map(itemHTML).join('');
+  }
+  html += `</div>`;
+
+  const live = h.cases.filter(c => c.status !== '已結案' && c.status !== '未成交');
+  const list = live.filter(c => S.filter === 'all' || c.designer === me.id);
+  html += `<h2>進行中案件<small>點選進入</small>${canCase() && !preview() ? '<span class="act" id="addCase">＋ 新增案件</span>' : ''}</h2>
+    <div class="seg"><button data-f="all" class="${S.filter === 'all' ? 'on' : ''}">全部</button><button data-f="mine" class="${S.filter === 'mine' ? 'on' : ''}">我負責的</button></div>`;
+  html += list.length ? STAGES.map(st => {
+    const g = list.filter(c => c.stage === st); if (!g.length) return '';
+    return `<div class="month">${st}・${g.length}</div>` + g.map(c => `<div class="card tap" data-case="${c.id}">
+      <div class="row2"><div><div class="t">${esc(c.name)}</div><div class="s">${esc([c.client, c.address].filter(String).join('・') || '—')}</div></div>${chip(c.stage, STAGE_CLS[c.stage])}</div>
+      <div class="mini"><span>設計師 ${esc(pname(c.designer) || '未指定')}</span><span>最新日誌 ${c.lastLog ? esc(md(c.lastLog)) : '—'}</span><span>未結指示 ${c.openIns}</span></div></div>`).join('');
+  }).join('') : '<div class="empty">沒有案件</div>';
+  $('#main').innerHTML = html;
+  $$('[data-f]').forEach(b => b.onclick = () => { S.filter = b.dataset.f; renderHome(); });
+  $$('[data-case]').forEach(e => e.onclick = () => openCase(e.dataset.case, 'sum'));
+  bindItems();
+  if ($('#tgDone')) $('#tgDone').onclick = () => { S.showDone = !S.showDone; renderHome(); };
+  $('#addTodo').onclick = () => newTodo('');
+  if ($('#addCase')) $('#addCase').onclick = newCase;
+  const fab = $('#fab'); fab.className = 'fab home'; fab.style.display = preview() ? 'none' : 'block'; fab.textContent = '＋ 待辦'; fab.onclick = () => newTodo('');
+  window.scrollTo(0, 0);
+}
+
+function itemHTML(i) {
+  if (i.kind === 'todo') {
+    return `<div class="todo ${i.done ? 'done' : ''}" data-todo="${i.id}" data-done="${i.done ? 1 : 0}"><div class="ck">${i.done ? '✓' : ''}</div>
+      <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[i.caseName ? esc(i.caseName) : '', dueTxt(i.due, i.done), i.from && i.from !== ME().id ? esc(short(pname(i.from))) + ' 交辦' : ''].filter(String).join('・')}</div></div></div>`;
+  }
+  const waitMe = i.status === '待確認' && !i.mine;
+  return `<div class="todo" data-goins="${i.caseId}"><div class="ck ins">指</div>
+    <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[esc(i.caseName), waitMe ? esc(short(pname(i.to))) + ' 已回報，等你確認' : (i.status === '待確認' ? '已回報，等主管確認' : dueTxt(i.due)), !waitMe ? esc(short(pname(i.from))) + ' 指示' : ''].filter(String).join('・')}</div></div>${chip(waitMe ? '待你確認' : i.status, INS_CLS[i.status])}</div>`;
+}
+function bindItems() {
+  $$('[data-todo]').forEach(e => e.onclick = async () => {
+    if (guard()) return;
+    const done = e.dataset.done !== '1';
+    e.classList.toggle('done', done); e.querySelector('.ck').textContent = done ? '✓' : '';
+    try { await API('setTodo', { id: e.dataset.todo, done }); if (S.cur) { await refreshCase(); render(); } else { await reloadHome(); renderHome(); } toast(done ? '完成 ✓' : '已改回未完成'); }
+    catch (x) { toast(x); }
+  });
+  $$('[data-goins]').forEach(e => e.onclick = () => openCase(e.dataset.goins, 'instr'));
+}
+
+function newTodo(caseId) {
+  if (guard()) return;
+  const ppl = leader() ? S.home.people : [ME()];
+  const live = S.home.cases.filter(c => c.status === '進行中');
+  sheet(`<h3>新增待辦</h3><div class="s">記下還沒做完的事，做完就打勾。</div>
+    <label>要做什麼</label><textarea id="ttxt" placeholder="例如：週三前把平面配置初稿給 Boss"></textarea>
+    <label>相關案件（可不選）</label><select id="tcase"><option value="">不屬於特定案件</option>${live.map(c => `<option value="${c.id}" ${c.id === caseId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+    ${leader() ? `<label>交給誰</label><div class="seg" id="tto">${ppl.map(p => `<button data-p="${p.id}" class="${p.id === ME().id ? 'on' : ''}">${p.id === ME().id ? '自己' : esc(short(p.name))}</button>`).join('')}</div>` : ''}
+    <label>期限（可不填）</label><input type="date" id="tdue">
+    <div class="btns"><button class="btn pri" id="tgo">加入待辦</button></div>`);
+  $$('#tto button').forEach(b => b.onclick = () => { $$('#tto button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+  $('#tgo').onclick = async () => {
+    const text = $('#ttxt').value.trim(); if (!text) return toast('請填寫內容');
+    const sel = $('#tto button.on');
+    busy(true); try {
+      await API('saveTodo', { text, caseId: $('#tcase').value, to: sel ? sel.dataset.p : ME().id, due: $('#tdue').value });
+      closeSheet(); if (S.cur) { await refreshCase(); render(); } else { await reloadHome(); renderHome(); } toast('已加入待辦');
+    } catch (e) { toast(e); } finally { busy(false); }
+  };
+}
+
+async function openCase(id, tab) {
+  busy(true, '載入案件…');
+  try { S.data = await API('case', { id }); S.cur = id; S.tab = tab || 'sum'; S.open = {}; render(); }
+  catch (e) { toast(e); } finally { busy(false); }
+}
+async function refreshCase() { S.data = await API('case', { id: S.cur }); }
+
+const TABS = [['sum', '概況', '◎'], ['log', '日誌', '✎'], ['instr', '指示', '➜'], ['client', '客戶', '☺'], ['prog', '進度', '▤'], ['docs', '文件', '❐']];
+function render() {
+  const c = S.data.info, me = ME().id;
+  $('#top').innerHTML = `<button class="back" id="backbtn">‹ 工作總表</button><h1>${esc(c['案件名稱'])}</h1>
+    <div class="sub">${chip(c['階段'], STAGE_CLS[c['階段']])}<span>設計師 ${esc(pname(c['負責設計師']) || '未指定')}</span>${c['客戶姓名'] ? '<span>・' + esc(c['客戶姓名']) + '</span>' : ''}</div>
+    ${preview() ? `<div class="pvbar">預覽中：${esc(ME().name)} 的畫面（唯讀）</div>` : ''}`;
+  $('#backbtn').onclick = async () => { busy(true, '更新中…'); try { await reloadHome(); } catch (e) { } busy(false); renderHome(); };
+  const nIns = S.data.ins.filter(i => (i.to === me && i.status === '處理中') || (i.from === me && i.status === '待確認')).length;
+  $('#nav').style.display = 'grid';
+  $('#nav').innerHTML = TABS.map(([k, n, ic]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><span class="ic">${ic}</span>${n}${k === 'instr' && nIns ? `<span class="badge">${nIns}</span>` : ''}</button>`).join('');
+  $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
+  const fab = $('#fab'); fab.className = 'fab'; fab.style.display = 'none';
+  ({ sum: vSum, log: vLog, instr: vInstr, client: vSoon, prog: vSoon, docs: vSoon })[S.tab]();
+  if (preview()) return;
+  if (S.tab === 'log') { fab.style.display = 'block'; fab.textContent = '＋ 新增日誌'; fab.onclick = () => logForm(null); }
+  if (S.tab === 'instr' && leader()) { fab.style.display = 'block'; fab.textContent = '＋ 下指示'; fab.onclick = () => newIns(''); }
+}
+
+function vSum() {
+  const c = S.data.info, logs = S.data.logs, ins = S.data.ins, me = ME().id;
+  const open = ins.filter(i => i.status !== '已結案');
+  const myTodos = S.data.todos.filter(t => t.to === me && !t.done);
+  const l = logs[0];
+  const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
+  const money = v => v ? 'NT$ ' + Number(String(v).replace(/[^0-9.]/g, '')).toLocaleString() : '';
+  $('#main').innerHTML = `
+  <div class="kpis">
+    <div class="kpi"><div class="n">${logs.length}</div><div class="l">日誌篇數</div></div>
+    <div class="kpi ${open.length ? 'warn' : ''}"><div class="n">${open.length}</div><div class="l">未結指示</div></div>
+  </div>
+  <h2>我在這個案件的待辦<small>${myTodos.length} 件</small>${preview() ? '' : '<span class="act" id="caseTodo">＋ 新增</span>'}</h2>
+  <div class="tl">${myTodos.length ? myTodos.map(t => itemHTML({ kind: 'todo', id: t.id, text: t.text, due: t.due, done: t.done, from: t.from })).join('') : '<div class="empty">沒有</div>'}</div>
+  <h2>最新日誌</h2>
+  ${l ? `<div class="card tap" id="lastlog"><div class="t">${esc(md(l.date))}　${l.trades.map(t => `<span class="tchip" style="background:${tcolor(t)}">${esc(t)}</span>`).join(' ')}</div>
+     <div class="s">${esc(pname(l.by))}｜${esc(l.text)}</div>${l.photos.length ? `<div class="s">📷 ${l.photos.length} 張照片</div>` : ''}</div>`
+      : '<div class="card"><div class="empty" style="padding:8px">還沒有日誌</div></div>'}
+  <h2>案件資料</h2>
+  <div class="card"><dl class="info">
+    ${row('客戶', esc(c['客戶姓名']))}
+    ${row('電話', c['客戶電話'] ? `<a href="tel:${esc(c['客戶電話'])}">${esc(c['客戶電話'])}</a>` : '')}
+    ${row('LINE', esc(c['客戶LINE']))}
+    ${row('地址', esc(c['地址']))}
+    ${row('類型', esc(c['類型']))}
+    ${row('來源', esc(c['來源']))}
+    ${row('建立日期', esc(c['建立日期']))}
+    ${row('提案日', esc(c['提案日']))}
+    ${row('預計開工', esc(c['預計開工日']))}
+    ${row('預計完工', esc(c['預計完工日']))}
+    ${ME().seeMoney ? row('設計費', money(c['設計費'])) + row('工程金額', money(c['工程金額'])) : ''}
+    ${row('雲端資料夾', c['Drive資料夾'] ? `<a href="${esc(c['Drive資料夾'])}" target="_blank">開啟</a>` : '')}
+    ${row('備註', esc(c['備註']))}
+  </dl></div>
+  ${leader() && !preview() ? `<h2>案件階段</h2><div class="seg">${STAGES.map(s => `<button data-st="${s}" class="${c['階段'] === s ? 'on' : ''}">${s}</button>`).join('')}</div>` : ''}
+  ${preview() ? '' : `<div class="btns"><button class="btn pri" id="qaLog">＋ 寫日誌</button>${leader() ? '<button class="btn sec" id="qaIns">＋ 下指示</button>' : ''}</div>`}`;
+  if (l) $('#lastlog').onclick = () => { S.tab = 'log'; S.open = { [l.id]: true }; render(); };
+  if ($('#qaLog')) $('#qaLog').onclick = () => logForm(null);
+  if ($('#qaIns')) $('#qaIns').onclick = () => newIns('');
+  if ($('#caseTodo')) $('#caseTodo').onclick = () => newTodo(S.cur);
+  bindItems();
+  $$('[data-st]').forEach(b => b.onclick = async () => {
+    if (b.dataset.st === c['階段']) return;
+    busy(true); try { await API('setStage', { id: S.cur, stage: b.dataset.st }); c['階段'] = b.dataset.st; render(); toast('階段已改為「' + b.dataset.st + '」'); } catch (e) { toast(e); } finally { busy(false); }
+  });
+}
+
+function vLog() {
+  const logs = S.data.logs, me = ME().id;
+  if (!logs.length) { $('#main').innerHTML = `<div class="soon"><b>還沒有日誌</b>按右下角「＋ 新增日誌」開始記錄。</div>`; return; }
+  const byMonth = {};
+  logs.forEach(l => { const m = String(l.date).slice(0, 7); (byMonth[m] = byMonth[m] || []).push(l); });
+  $('#main').innerHTML = Object.keys(byMonth).map(m => `<div class="month">${m.replace('/', ' 年 ')} 月</div><div class="lgroup">` + byMonth[m].map(l => {
+    const li = S.data.ins.filter(i => i.logId === l.id);
+    const lateDays = l.created ? days(String(l.created).slice(0, 10), l.date) : 0;
+    const canEdit = !preview();
+    return `<div class="lrow ${S.open[l.id] ? 'open' : ''}" data-lid="${l.id}">
+      <div class="lhead"><span class="caret">▶</span><span class="ld">${esc(md(l.date))}</span>
+        <span class="lgs">${l.trades.map(t => `<span class="tchip" style="background:${tcolor(t)}">${esc(t)}</span>`).join('')}</span>
+        ${lateDays >= 1 ? `<span class="late">補登 ${lateDays} 天</span>` : ''}
+        ${l.issue ? '<span class="idot" title="有問題"></span>' : ''}${li.length ? `<span class="icount">${li.length}</span>` : ''}
+        <span class="lby">${esc(short(pname(l.by)))}</span></div>
+      <div class="lbody">
+        <div style="white-space:pre-wrap">${esc(l.text) || '<span style="color:var(--muted)">（未填寫）</span>'}</div>
+        ${l.issue ? `<div class="issue">⚠ ${esc(l.issue)}</div>` : ''}
+        ${l.photos.length ? `<div class="pgrid">${l.photos.map(p => `<div class="pc" data-ph="${esc(p.path)}">${S.thumbs[p.path] ? `<img src="${S.thumbs[p.path].src}">` : ''}${p.note ? `<span>${esc(p.note)}</span>` : ''}</div>`).join('')}</div>` : ''}
+        <div class="stamp">${esc(short(pname(l.by)))} 建立於 ${esc(l.created)}${l.edits ? `・修改 ${l.edits} 次（最後由 ${esc(short(pname(l.editor || l.by)))} 於 ${esc(l.edited)}）` : ''}</div>
+        ${li.map(insHTML).join('')}
+        <div class="btns">${canEdit ? `<button class="btn ghost sm" data-edit="${l.id}">修改這篇</button>` : ''}${leader() && !preview() ? `<button class="btn sec sm" data-newins="${l.id}">＋ 針對這篇下指示</button>` : ''}</div>
+      </div></div>`;
+  }).join('') + `</div>`).join('');
+  $$('.lhead').forEach(h => h.onclick = () => {
+    const r = h.parentElement, id = r.dataset.lid; S.open[id] = !S.open[id]; r.classList.toggle('open', S.open[id]);
+    if (S.open[id]) loadThumbs(S.data.logs.find(x => x.id === id));
+  });
+  $$('[data-newins]').forEach(b => b.onclick = () => newIns(b.dataset.newins));
+  $$('[data-edit]').forEach(b => b.onclick = () => logForm(S.data.logs.find(x => x.id === b.dataset.edit)));
+  $$('[data-ph]').forEach(p => p.onclick = () => { const t = S.thumbs[p.dataset.ph]; if (t && t.url) window.open(t.url, '_blank'); });
+  bindIns();
+  logs.filter(l => S.open[l.id]).forEach(loadThumbs);
+}
+async function loadThumbs(l) {
+  if (!l) return; const need = l.photos.map(p => p.path).filter(p => !S.thumbs[p]); if (!need.length) return;
+  try { Object.assign(S.thumbs, await API('thumbs', { paths: need })); if (S.tab === 'log' && S.cur) vLog(); } catch (e) { }
+}
+
+function insHTML(i) {
+  const me = ME().id;
+  let act = '';
+  if (!preview()) {
+    if (i.status === '處理中' && i.to === me) act = `<button class="btn ok sm" data-reply="${i.id}">回報完成</button>`;
+    if (i.status === '待確認' && (i.from === me || S.real.role === 'Boss' && !S.as)) act = `<button class="btn ok sm" data-close="${i.id}">確認結案</button><button class="btn ghost sm" data-ret="${i.id}">退回</button>`;
+  }
+  return `<div class="instr"><div class="row2"><div style="flex:1">${esc(i.text)}</div>${chip(i.status, INS_CLS[i.status])}</div>
+    <div class="who">${esc(pname(i.from))} → ${esc(pname(i.to) || '未指定')}${i.due ? '・' + dueTxt(i.due, i.status === '已結案') : ''}${i.returns ? '・退回 ' + i.returns + ' 次' : ''}</div>
+    ${i.reply ? `<div class="reply">${esc(i.reply)}</div>` : ''}${act ? `<div class="btns">${act}</div>` : ''}</div>`;
+}
+function vInstr() {
+  const all = S.data.ins;
+  const f = S.insFilter, list = all.filter(i => f === 'all' ? true : f === 'open' ? i.status !== '已結案' : i.status === '已結案');
+  $('#main').innerHTML = `<div class="seg"><button data-if="open" class="${f === 'open' ? 'on' : ''}">未結 ${all.filter(i => i.status !== '已結案').length}</button><button data-if="done" class="${f === 'done' ? 'on' : ''}">已結案</button><button data-if="all" class="${f === 'all' ? 'on' : ''}">全部</button></div>`
+    + (list.length ? list.map(i => {
+      const lg = S.data.logs.find(l => l.id === i.logId);
+      return `<div class="card">${lg ? `<div class="s" style="margin:0 0 4px">來自 ${esc(md(lg.date))} 日誌</div>` : ''}${insHTML(i).replace('class="instr"', 'class="instr" style="margin-top:0"')}</div>`;
+    }).join('') : '<div class="empty">沒有指示</div>');
+  $$('[data-if]').forEach(b => b.onclick = () => { S.insFilter = b.dataset.if; vInstr(); });
+  bindIns();
+}
+function bindIns() {
+  $$('[data-reply]').forEach(b => b.onclick = () => {
+    sheet(`<h3>回報完成</h3><div class="s">寫下處理結果，送出後由下指示的人確認結案。</div><label>處理結果</label><textarea id="rtxt"></textarea><div class="btns"><button class="btn pri" id="rgo">送出回報</button></div>`);
+    $('#rgo').onclick = () => insAct(b.dataset.reply, 'reply', $('#rtxt').value, '已回報');
+  });
+  $$('[data-close]').forEach(b => b.onclick = () => insAct(b.dataset.close, 'close', '', '已結案'));
+  $$('[data-ret]').forEach(b => b.onclick = () => {
+    sheet(`<h3>退回指示</h3><div class="s">說明還要補什麼。</div><label>退回原因</label><textarea id="rtxt"></textarea><div class="btns"><button class="btn pri" id="rgo">退回</button></div>`);
+    $('#rgo').onclick = () => insAct(b.dataset.ret, 'return', $('#rtxt').value, '已退回');
+  });
+}
+async function insAct(id, act, text, msg) {
+  busy(true); try { await API('actIns', { id, act, text }); await refreshCase(); closeSheet(); render(); toast(msg); } catch (e) { toast(e); } finally { busy(false); }
+}
+function newIns(logId) {
+  if (guard()) return;
+  const ppl = S.home.people.filter(p => p.id !== ME().id);
+  const lg = S.data.logs.find(l => l.id === logId);
+  sheet(`<h3>下指示</h3><div class="s">${esc(S.data.info['案件名稱'])}${lg ? '・針對 ' + esc(md(lg.date)) + ' 日誌' : ''}</div>
+    <label>指示內容</label><textarea id="itxt" placeholder="例如：浴室排水管封板前先拍完整照片給我看"></textarea>
+    <label>交給誰</label><div class="seg" id="ito">${ppl.map((p, k) => `<button data-p="${p.id}" class="${k === 0 ? 'on' : ''}">${esc(short(p.name))}</button>`).join('')}</div>
+    <label>期限</label><input type="date" id="idue">
+    <div class="btns"><button class="btn pri" id="igo">送出指示</button></div>`);
+  $$('#ito button').forEach(b => b.onclick = () => { $$('#ito button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+  $('#igo').onclick = async () => {
+    const text = $('#itxt').value.trim(); if (!text) return toast('請填寫指示內容');
+    const to = $('#ito button.on');
+    busy(true); try { await API('saveIns', { caseId: S.cur, logId, text, to: to ? to.dataset.p : '', due: $('#idue').value }); await refreshCase(); closeSheet(); render(); toast('指示已送出'); } catch (e) { toast(e); } finally { busy(false); }
+  };
+}
+
+function vSoon() {
+  const n = { client: '客戶指示與會議紀錄', prog: '進度計畫與查驗點', docs: '文件與 PDF 報告' }[S.tab];
+  $('#main').innerHTML = `<div class="soon"><b>${n}</b>這一頁在下一段建置。</div>`;
+}
+
+let NL = null;
+function logForm(log) {
+  if (guard()) return;
+  const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  NL = { id: log ? log.id : null, trades: log ? log.trades.slice() : [], photos: [], old: log ? log.photos.slice() : [] };
+  const names = S.home.trades.map(t => t.name), extra = NL.trades.filter(t => !names.includes(t));
+  sheet(`<h3>${log ? '修改日誌' : '新增日誌'}</h3><div class="s">${esc(S.data.info['案件名稱'])}${log ? '・建立於 ' + esc(log.created) + '（建立時間不會改變）' : ''}</div>
+    <label>施工日期</label><input type="date" id="ldate" value="${log ? String(log.date).replace(/\//g, '-') : today}">
+    <div class="hint" id="latehint"></div>
+    <label>今天的工種（可複選）</label><div class="tpick" id="ltr">${names.concat(extra).map(n => `<button data-t="${esc(n)}">${esc(n)}</button>`).join('')}<button class="other" id="oth">＋ 其他</button></div>
+    <div class="otherrow" id="othrow"><input id="othin" placeholder="輸入工種名稱"><button class="btn sec sm" id="othok">加入</button></div>
+    <label>今日狀況</label><textarea id="ltxt" placeholder="做了什麼、誰進場、現場情況">${log ? esc(log.text) : ''}</textarea>
+    <label>照片</label><label class="addph" for="lfile" style="margin:0">📷 拍照或選照片</label><input type="file" id="lfile" accept="image/jpeg,image/png,image/heic,image/heif,image/webp" multiple style="display:none">
+    <div class="phl" id="lph"></div>
+    <label>發現問題（沒有就留空）</label><input id="liss" value="${log ? esc(log.issue) : ''}" placeholder="例如：浴室排水管位置與圖面不符">
+    <div class="btns"><button class="btn pri" id="lgo">${log ? '儲存修改' : '儲存日誌'}</button></div>
+    <div class="hint">系統會記下建立時間；施工日期早於建立日期，會標示「補登」。</div>`);
+  const paint = () => $$('#ltr button[data-t]').forEach(b => { const on = NL.trades.includes(b.dataset.t), c = tcolor(b.dataset.t); b.classList.toggle('on', on); b.style.background = on ? c : '#fff'; b.style.borderColor = on ? c : 'var(--line)'; });
+  const bindT = () => $$('#ltr button[data-t]').forEach(b => b.onclick = () => { const t = b.dataset.t; NL.trades = NL.trades.includes(t) ? NL.trades.filter(x => x !== t) : NL.trades.concat(t); paint(); });
+  bindT(); paint();
+  $('#oth').onclick = () => { $('#othrow').style.display = 'flex'; $('#othin').focus(); };
+  $('#othok').onclick = () => {
+    const v = $('#othin').value.trim(); if (!v) return;
+    if (!$$('#ltr button[data-t]').some(b => b.dataset.t === v)) $('#oth').insertAdjacentHTML('beforebegin', `<button data-t="${esc(v)}">${esc(v)}</button>`);
+    if (!NL.trades.includes(v)) NL.trades.push(v);
+    $('#othin').value = ''; $('#othrow').style.display = 'none'; bindT(); paint();
+  };
+  const lateHint = () => { const v = $('#ldate').value.replace(/-/g, '/'), base = log ? String(log.created).slice(0, 10) : S.home.today, n = days(base, v); $('#latehint').textContent = n >= 1 ? `這篇會標示「補登 ${n} 天」` : ''; };
+  $('#ldate').onchange = lateHint; lateHint();
+  $('#lfile').onchange = async e => {
+    const files = [...e.target.files]; e.target.value = '';
+    for (const f of files) { try { NL.photos.push({ data: await shrink(f), note: '' }); } catch (x) { toast('有一張照片讀取失敗'); } }
+    drawPh();
+  };
+  $('#lgo').onclick = saveLogNow;
+  drawPh();
+  if (log) loadThumbs(log).then(drawPh);
+}
+function drawPh() {
+  if (!$('#lph')) return;
+  const old = NL.old.map(p => `<div class="phi">${S.thumbs[p.path] ? `<img src="${S.thumbs[p.path].src}">` : '<div class="ph0"></div>'}<div style="flex:1;font-size:13px">${esc(p.note || '（無說明）')}</div><button class="rm" data-delold="${p.id}">✕</button></div>`).join('');
+  const neu = NL.photos.map((p, i) => `<div class="phi"><img src="data:image/jpeg;base64,${p.data}"><input data-i="${i}" placeholder="照片說明，例如：主臥北牆插座位置" value="${esc(p.note)}"><button class="rm" data-rm="${i}">✕</button></div>`).join('');
+  $('#lph').innerHTML = old + neu;
+  $$('#lph input').forEach(s => s.oninput = () => NL.photos[+s.dataset.i].note = s.value);
+  $$('[data-rm]').forEach(b => b.onclick = () => { NL.photos.splice(+b.dataset.rm, 1); drawPh(); });
+  $$('[data-delold]').forEach(b => b.onclick = async () => {
+    if (!confirmDel(b)) return;
+    busy(true, '刪除照片…'); try { await API('deletePhoto', { id: b.dataset.delold }); NL.old = NL.old.filter(p => p.id !== b.dataset.delold); drawPh(); toast('照片已刪除'); } catch (e) { toast(e); } finally { busy(false); }
+  });
+}
+function confirmDel(b) { if (b.dataset.sure) return true; b.dataset.sure = 1; b.textContent = '確定刪除？'; b.style.fontSize = '12px'; b.style.color = 'var(--bad)'; setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = '✕'; b.style.fontSize = ''; b.style.color = ''; } }, 3000); return false; }
+function shrink(file, max = 1600) {
+  return new Promise((ok, no) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const r = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * r); c.height = Math.round(img.height * r);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      ok(c.toDataURL('image/jpeg', .82).split(',')[1]);
+    };
+    img.onerror = no; img.src = url;
+  });
+}
+async function saveLogNow() {
+  const text = $('#ltxt').value.trim();
+  if (!text && !NL.photos.length && !NL.old.length) return toast('請至少寫一句今日狀況或放一張照片');
+  if (!NL.trades.length) return toast('請選今天的工種');
+  busy(true, NL.photos.length ? `上傳 ${NL.photos.length} 張照片中…` : '儲存中…');
+  try {
+    const p = { caseId: S.cur, date: $('#ldate').value, trades: NL.trades, text, issue: $('#liss').value.trim(), photos: NL.photos };
+    const id = NL.id ? await API('updateLog', Object.assign({ id: NL.id }, p)) : await API('saveLog', p);
+    await refreshCase(); closeSheet(); S.tab = 'log'; S.open = { [id]: true }; render(); toast(NL.id ? '已儲存修改' : '日誌已儲存');
+  } catch (e) { toast(e); } finally { busy(false); }
+}
+
+function newCase() {
+  if (guard()) return;
+  const ds = S.home.people.filter(p => p.role === '設計師' || p.role === 'Boss' || p.role === '主管');
+  sheet(`<h3>新增案件</h3>
+    <label>案件名稱</label><input id="cn" placeholder="例如：七期 陳公館">
+    <label>客戶姓名</label><input id="cc">
+    <label>客戶電話</label><input id="cp" type="tel">
+    <label>地址</label><input id="ca">
+    <label>類型</label><select id="ct"><option></option><option>住宅</option><option>商業空間</option><option>旅宿</option><option>其他</option></select>
+    <label>來源</label><select id="cs"><option></option><option>轉介</option><option>自行開發</option><option>官網／LINE</option><option>舊客回購</option></select>
+    <label>負責設計師</label><select id="cd"><option value=""></option>${ds.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+    <div class="btns"><button class="btn pri" id="cgo">建立案件</button></div>`);
+  $('#cgo').onclick = async () => {
+    const name = $('#cn').value.trim(); if (!name) return toast('請填寫案件名稱');
+    busy(true); try {
+      const id = await API('saveCase', { name, client: $('#cc').value.trim(), phone: $('#cp').value.trim(), address: $('#ca').value.trim(), type: $('#ct').value, source: $('#cs').value, designer: $('#cd').value });
+      await reloadHome(); closeSheet(); busy(false); openCase(id, 'sum'); toast('案件已建立');
+    } catch (e) { busy(false); toast(e); }
+  };
+}
+
+function tradeAdmin() {
+  let color = COLORS[0];
+  sheet(`<h3>工種設定</h3><div class="s">這裡的工種會出現在每個人寫日誌的選項裡。</div>
+    <div class="tpick" style="margin-top:12px">${S.home.trades.map(t => `<span class="tchip" style="background:${t.color};font-size:13px;padding:5px 10px">${esc(t.name)}</span>`).join('')}</div>
+    <label>新增工種</label><input id="tn" placeholder="例如：石材、壁紙、監控">
+    <label>顏色</label><div class="sw" id="tsw">${COLORS.map((c, k) => `<i data-c="${c}" class="${k === 0 ? 'on' : ''}" style="background:${c}"></i>`).join('')}</div>
+    <div class="btns"><button class="btn pri" id="tgo2">新增</button></div>`);
+  $$('#tsw i').forEach(i => i.onclick = () => { $$('#tsw i').forEach(x => x.classList.remove('on')); i.classList.add('on'); color = i.dataset.c; });
+  $('#tgo2').onclick = async () => {
+    const name = $('#tn').value.trim(); if (!name) return toast('請填寫工種名稱');
+    busy(true); try { await API('saveTrade', { name, color }); await reloadHome(); tradeAdmin(); toast('已新增「' + name + '」'); } catch (e) { toast(e); } finally { busy(false); }
+  };
+}
+
+/* PWA 擴充：登入、更新、自動刷新、新事項提醒 */
+function showLogin(msg) {
+  $('#nav').style.display = 'none'; $('#fab').style.display = 'none'; $('#top').style.display = 'none'; closeSheet();
+  $('#main').style.padding = '0';
+  $('#main').innerHTML = `<div class="login"><div class="mark">浩森</div><h1>浩森工作</h1>
+    <p>浩森設計工作管理系統<br>請使用公司 Google 帳號（@housenaid.com）登入</p>
+    <div class="gbtn" id="gbtn"></div><div class="lerr" id="lerr">${esc(msg || '')}</div>
+    <div class="foot">HOUSEN INTERIOR DESIGN</div></div>`;
+  const init = () => {
+    if (!(window.google && google.accounts && google.accounts.id)) return setTimeout(init, 200);
+    google.accounts.id.initialize({ client_id: CONFIG.CLIENT_ID, hd: 'housenaid.com', callback: onGoogle, auto_select: true, ux_mode: 'popup' });
+    google.accounts.id.renderButton($('#gbtn'), { theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with', locale: 'zh-TW', width: 260 });
+  };
+  init();
+}
+async function onGoogle(resp) {
+  $('#lerr').textContent = '登入中…';
+  try {
+    const r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'login', idToken: resp.credential }) });
+    const j = await r.json();
+    if (!j.ok) { $('#lerr').textContent = j.error; return; }
+    localStorage.setItem(TOKEN_KEY, j.data.token);
+    $('#top').style.display = ''; $('#main').style.padding = '';
+    $('#main').innerHTML = '<div class="boot"><div class="logo">浩 森</div>載入中…</div>';
+    boot();
+  } catch (e) { $('#lerr').textContent = '網路連線失敗，請再試一次'; }
+}
+function logout() {
+  localStorage.removeItem(TOKEN_KEY);
+  try { google.accounts.id.disableAutoSelect(); } catch (e) { }
+  S.home = null; S.real = null; S.as = ''; showLogin();
+}
+
+const SEEN_KEY = 'housen_seen';
+function seenSet() { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch (e) { return new Set(); } }
+function itemKey(i) { return i.kind + ':' + i.id + ':' + (i.status || ''); }
+function isNew(i) { return S.newKeys && S.newKeys.has(itemKey(i)); }
+function notifyNew() {
+  if (!S.home || preview()) return;
+  const seen = seenSet(), first = !localStorage.getItem(SEEN_KEY);
+  const open = S.home.items.filter(i => i.kind === 'ins' || !i.done);
+  const fresh = open.filter(i => !seen.has(itemKey(i)) && i.from !== ME().id);
+  S.newKeys = new Set(first ? [] : fresh.map(itemKey));
+  if (!first && fresh.length) {
+    const nIns = fresh.filter(i => i.kind === 'ins').length, nTodo = fresh.length - nIns;
+    toast('你有 ' + [nIns ? nIns + ' 則新指示／回報' : '', nTodo ? nTodo + ' 件新待辦' : ''].filter(String).join('、'));
+    if (navigator.setAppBadge) navigator.setAppBadge(open.length).catch(() => { });
+  }
+  localStorage.setItem(SEEN_KEY, JSON.stringify(open.map(itemKey)));
+}
+
+async function silentRefresh() {
+  if (!S.home || $('#sheet').style.display === 'block') return;
+  try {
+    if (S.cur) { await refreshCase(); render(); }
+    S.home = await API('home'); S.lastLoad = Date.now(); notifyNew();
+    if (!S.cur) renderHome();
+  } catch (e) { }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.lastLoad && Date.now() - S.lastLoad > 30000) silentRefresh();
+});
+setInterval(() => { if (document.visibilityState === 'visible' && S.lastLoad && Date.now() - S.lastLoad > 180000) silentRefresh(); }, 60000);
+
+(function pullToRefresh() {
+  let y0 = null, dy = 0; const ptr = $('#ptr');
+  addEventListener('touchstart', e => { y0 = (scrollY <= 0 && $('#sheet').style.display !== 'block') ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  addEventListener('touchmove', e => { if (y0 === null) return; dy = e.touches[0].clientY - y0; if (dy > 0) ptr.style.transform = `translate(-50%, ${Math.min(dy, 90) - 60}px)`; ptr.textContent = dy > 80 ? '放開以重新整理' : '下拉重新整理'; }, { passive: true });
+  addEventListener('touchend', async () => {
+    if (y0 !== null && dy > 80) { ptr.textContent = '更新中…'; ptr.style.transform = 'translate(-50%, 20px)'; await silentRefresh(); toast('已更新'); }
+    ptr.style.transform = 'translate(-50%, -60px)'; y0 = null;
+  });
+})();
+
+function standalone() { return matchMedia('(display-mode: standalone)').matches || navigator.standalone; }
+function installTip() {
+  if (standalone() || localStorage.getItem('housen_tip')) return '';
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const how = ios ? '在 Safari 點下方「分享」<b>⬆︎</b>，選「<b>加入主畫面</b>」' : '在瀏覽器選單選「<b>安裝應用程式</b>」或「<b>加到主畫面</b>」';
+  setTimeout(() => { const x = $('#tipx'); if (x) x.onclick = () => { localStorage.setItem('housen_tip', 1); x.parentElement.remove(); }; }, 0);
+  return `<div class="tip"><span class="tx" id="tipx">✕</span>把「浩森工作」加到手機主畫面，之後像 App 一樣直接開：<br>${how}</div>`;
+}
+
+if ('serviceWorker' in navigator && !window.MOCK) {
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const show = w => { const u = $('#upd'); u.style.display = 'block'; u.onclick = () => w.postMessage('skip'); };
+    if (reg.waiting && navigator.serviceWorker.controller) show(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) show(w); });
+    });
+    setInterval(() => reg.update(), 30 * 60000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update(); });
+  });
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
+}
+
+boot();
+</script>
+</body>
+</html>
