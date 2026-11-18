@@ -135,13 +135,17 @@ textarea{min-height:84px;resize:vertical}
 @keyframes sp{to{transform:rotate(360deg)}}
 .boot{padding:80px 20px;text-align:center;color:var(--muted)}
 .boot .logo{font-family:"Noto Serif TC",serif;font-size:22px;color:var(--ink);letter-spacing:.2em;margin-bottom:8px}
-.login{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;text-align:center}
-.login .mark{width:84px;height:84px;border-radius:22px;background:var(--ink);color:#f3ede4;display:flex;align-items:center;justify-content:center;font-family:"Noto Serif TC",serif;font-size:26px;letter-spacing:.06em;box-shadow:0 10px 30px rgba(43,39,36,.25)}
-.login h1{font-family:"Noto Serif TC",serif;font-size:24px;margin:22px 0 6px;letter-spacing:.08em}
-.login p{color:var(--muted);font-size:13.5px;line-height:1.7;margin:0 0 26px}
+.login{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px 120px;text-align:center}
+.login .logo{width:150px;height:auto;display:block}
+.login h1{font-family:"Noto Serif TC",serif;font-size:21px;font-weight:600;margin:30px 0 0;letter-spacing:.14em;color:var(--ink)}
+.login .rule{width:36px;height:1px;background:#AF9263;margin:18px auto 30px}
 .login .gbtn{min-height:44px}
-.login .lerr{color:var(--bad);font-size:13px;margin-top:16px;min-height:20px}
-.login .foot{position:absolute;bottom:calc(18px + env(safe-area-inset-bottom));left:0;right:0;font-size:11px;color:var(--muted);letter-spacing:.2em}
+.login .hint{color:var(--muted);font-size:12.5px;line-height:1.7;margin:16px 0 0}
+.login .lerr{color:var(--bad);font-size:13px;margin-top:10px;min-height:20px}
+.login .foot{position:absolute;bottom:calc(26px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;line-height:1}
+.login .foot b{display:block;font-family:"Noto Serif TC",serif;font-weight:500;font-size:19px;letter-spacing:.55em;padding-left:.55em;color:var(--ink)}
+.login .foot i{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:9px;font-style:normal;font-size:9.5px;letter-spacing:.42em;padding-left:.42em;color:#AF9263}
+.login .foot i:before,.login .foot i:after{content:"";width:22px;height:1px;background:#AF9263;opacity:.6}
 .upd{position:fixed;left:50%;transform:translateX(-50%);top:calc(10px + env(safe-area-inset-top));z-index:60;background:var(--ink);color:#fff;border-radius:99px;padding:10px 16px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2);cursor:pointer;display:none;white-space:nowrap}
 .ptr{position:fixed;left:50%;top:calc(8px + env(safe-area-inset-top));transform:translate(-50%,-60px);z-index:30;background:#fff;border:1px solid var(--line);border-radius:99px;padding:6px 12px;font-size:12px;color:var(--muted);transition:transform .15s}
 .newdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--bad);margin-right:6px;vertical-align:middle}
@@ -593,10 +597,9 @@ function tradeAdmin() {
 function showLogin(msg) {
   $('#nav').style.display = 'none'; $('#fab').style.display = 'none'; $('#top').style.display = 'none'; closeSheet();
   $('#main').style.padding = '0';
-  $('#main').innerHTML = `<div class="login"><div class="mark">浩森</div><h1>浩森工作</h1>
-    <p>浩森設計工作管理系統<br>請使用公司 Google 帳號（@housenaid.com）登入</p>
-    <div class="gbtn" id="gbtn"></div><div class="lerr" id="lerr">${esc(msg || '')}</div>
-    <div class="foot">HOUSEN INTERIOR DESIGN</div></div>`;
+  $('#main').innerHTML = `<div class="login"><img class="logo" src="icons/logo.png" alt="浩森設計 HOUSEN"><h1>浩森設計工作管理系統</h1><div class="rule"></div>
+    <div class="gbtn" id="gbtn"></div><p class="hint">請使用公司 Google 帳號（@housenaid.com）登入</p><div class="lerr" id="lerr">${esc(msg || '')}</div>
+    <div class="foot"><b>HOUSEN</b><i>INTERIOR DESIGN</i></div></div>`;
   const init = () => {
     if (!(window.google && google.accounts && google.accounts.id)) return setTimeout(init, 200);
     google.accounts.id.initialize({ client_id: CONFIG.CLIENT_ID, hd: 'housenaid.com', callback: onGoogle, auto_select: true, ux_mode: 'popup' });

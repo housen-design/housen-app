@@ -353,3 +353,11 @@ function saveTrade_(me, d) {
   appendRow_('工種清單', { '工種': name, '色碼': d.color || '#8A7F75', '排序': max + 1, '啟用': 'Y' });
   return true;
 }
+
+
+/** 第一次安裝或新增權限時，在編輯器選這個函式按「執行」完成授權 */
+function authorize() {
+  secret_();
+  UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=x', { muteHttpExceptions: true });
+  Logger.log('授權完成');
+}
