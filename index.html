@@ -152,6 +152,17 @@ textarea{min-height:84px;resize:vertical}
 .tip{background:var(--info2);color:var(--info);border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.6;margin-bottom:12px;position:relative}
 .tip b{font-weight:500}.tip .tx{position:absolute;right:8px;top:6px;cursor:pointer}
 .err{background:var(--bad2);color:var(--bad);border-radius:12px;padding:14px;font-size:13.5px;line-height:1.6}
+.lst{margin-top:10px;font-size:12px;border-radius:9px;padding:7px 10px;line-height:1.6}
+.lst.mute{background:#f0ebe4;color:#7a7067}.lst.warn{background:var(--warn2);color:var(--warn)}.lst.bad{background:var(--bad2);color:var(--bad)}.lst.ok{background:var(--ok2);color:var(--ok)}
+.diff{margin:10px 0 12px;border:1.5px dashed var(--warn);border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.7;background:#fffaf3}
+.diff .dh{font-size:12px;color:var(--warn);font-weight:500;margin-bottom:4px}
+.diff .dk{font-size:11.5px;color:var(--muted);margin-top:6px}
+.diff del{background:#f6dcd7;color:#9a3b30;text-decoration:line-through}.diff ins{background:#dcefe0;color:#2f6a40;text-decoration:none}
+.diff .gone{display:inline-block;position:relative;width:64px;height:48px;border-radius:6px;overflow:hidden;margin:4px 4px 0 0;background:#ddd;outline:2px solid var(--bad)}
+.diff .gone img{width:100%;height:100%;object-fit:cover;opacity:.6}.diff .gone b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--bad);font-size:11px}
+.warnbox{background:var(--warn2);color:var(--warn);border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.6;margin-top:6px}
+.ck.lg{border-radius:6px;border-color:var(--info);color:var(--info);font-size:11px}
+.cdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bad);margin-left:6px;vertical-align:middle}
 </style>
 </head>
 <body>
@@ -207,7 +218,9 @@ function guard() { if (preview()) { toast('預覽模式只能看，不能存檔'
 
 const STAGE_CLS = { '洽談': 'c-mute', '提案': 'c-info', '設計': 'c-info', '開案前': 'c-warn', '施工': 'c-ok', '結案': 'c-mute' };
 const STAGES = ['洽談', '提案', '設計', '開案前', '施工', '結案'];
-const INS_CLS = { '處理中': 'c-info', '待確認': 'c-warn', '已結案': 'c-ok' };
+const INS_CLS = { '待處理': 'c-info', '已回報': 'c-warn', '已結案': 'c-ok' };
+const LOG_CLS = { '草稿': 'c-mute', '待設計師確認': 'c-warn', '待簽核': 'c-warn', '已簽核': 'c-ok' };
+const PUBLIC_HINT = '此內容會出現在給客戶的工程日誌 PDF。請用專業、客觀、明確的文字，不要承諾追加減費用或工期；人事、底價、利潤、財務等內部資訊不要寫在這裡。';
 const chip = (t, cls) => `<span class="chip ${cls || 'c-mute'}">${esc(t)}</span>`;
 const COLORS = ['#9A9086', '#8A6A4B', '#5B6F8C', '#4F8A8B', '#B9773A', '#6E8FA6', '#A0794F', '#6D6359', '#4F7A5C', '#A88BA0', '#C9A227', '#B0483C'];
 
@@ -232,7 +245,8 @@ function renderHome() {
   const h = S.home, me = h.me;
   $('#nav').style.display = 'none';
   const open = h.items.filter(i => i.kind === 'ins' ? true : !i.done);
-  const late = open.filter(i => i.due && days(i.due, h.today) < 0 && !(i.kind === 'ins' && i.status === '待確認' && i.mine));
+  const late = open.filter(i => i.kind === 'log' ? i.overdue : (i.due && days(i.due, h.today) < 0 && !(i.kind === 'ins' && i.status === '已回報' && i.mine)));
+  const act = actSeen();
   const doneToday = h.items.filter(i => i.kind === 'todo' && i.done && String(i.doneAt).slice(0, 10) === h.today);
   $('#top').innerHTML = `<div class="brand"><span>浩森設計工作管理系統</span><span>${leader() && !preview() ? '<a id="admin">⚙ 工種設定</a>　' : ''}<a id="logout">登出</a></span></div>
     <h1 class="big">${esc(short(me.name))}工作總表</h1>
@@ -259,7 +273,7 @@ function renderHome() {
   html += list.length ? STAGES.map(st => {
     const g = list.filter(c => c.stage === st); if (!g.length) return '';
     return `<div class="month">${st}・${g.length}</div>` + g.map(c => `<div class="card tap" data-case="${c.id}">
-      <div class="row2"><div><div class="t">${esc(c.name)}</div><div class="s">${esc([c.client, c.address].filter(String).join('・') || '—')}</div></div>${chip(c.stage, STAGE_CLS[c.stage])}</div>
+      <div class="row2"><div><div class="t">${esc(c.name)}${c.act && act[c.id] !== undefined && c.act > act[c.id] ? '<span class="cdot" title="有新動態"></span>' : ''}</div><div class="s">${esc([c.client, c.address].filter(String).join('・') || '—')}</div></div>${chip(c.stage, STAGE_CLS[c.stage])}</div>
       <div class="mini"><span>設計師 ${esc(pname(c.designer) || '未指定')}</span><span>最新日誌 ${c.lastLog ? esc(md(c.lastLog)) : '—'}</span><span>未結指示 ${c.openIns}</span></div></div>`).join('');
   }).join('') : '<div class="empty">沒有案件</div>';
   $('#main').innerHTML = html;
@@ -273,14 +287,28 @@ function renderHome() {
   window.scrollTo(0, 0);
 }
 
+const LOG_TASK = {
+  sign: ['簽核', '待簽核', 'c-warn'], resign: ['確認修改', '修改待確認', 'c-warn'], overdue: ['逾期未簽', '逾期未簽', 'c-bad'],
+  confirm: ['確認日誌', '待你確認', 'c-warn'], returned: ['被退回', '退回', 'c-bad'], draft: ['草稿未送出', '草稿', 'c-mute'],
+  send: ['可傳給客戶', '已簽核', 'c-ok'], minor: ['已修改（新增照片）', '看一下', 'c-info']
+};
 function itemHTML(i) {
+  if (i.kind === 'log') {
+    const [verb, tag, cls] = LOG_TASK[i.status] || ['日誌', i.status, 'c-mute'];
+    const sub = [esc(i.caseName), esc(md(i.date)) + ' 日誌', i.by !== ME().id ? esc(short(pname(i.by))) + ' 填寫' : '',
+      i.status === 'overdue' ? '由 ' + esc(short(pname(i.signer))) + ' 簽核' : '',
+      i.due && (i.status === 'sign' || i.status === 'resign') ? (i.overdue ? '<span class="bad">已逾期（期限 ' + esc(md(i.due)) + ' 中午）</span>' : '期限 ' + esc(md(i.due)) + ' 中午') : '',
+      i.escal ? '主管轉來' : '', i.note ? '原因：' + esc(i.note) : ''].filter(String).join('・');
+    return `<div class="todo" data-golog="${i.caseId}|${i.id}"><div class="ck lg">誌</div>
+      <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${verb}：${esc(i.caseName)} ${esc(md(i.date))}</div><div class="s">${sub}</div></div>${chip(i.overdue ? '逾期' : tag, i.overdue ? 'c-bad' : cls)}</div>`;
+  }
   if (i.kind === 'todo') {
     return `<div class="todo ${i.done ? 'done' : ''}" data-todo="${i.id}" data-done="${i.done ? 1 : 0}"><div class="ck">${i.done ? '✓' : ''}</div>
       <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[i.caseName ? esc(i.caseName) : '', dueTxt(i.due, i.done), i.from && i.from !== ME().id ? esc(short(pname(i.from))) + ' 交辦' : ''].filter(String).join('・')}</div></div></div>`;
   }
-  const waitMe = i.status === '待確認' && !i.mine;
+  const waitMe = i.status === '已回報' && !i.mine;
   return `<div class="todo" data-goins="${i.caseId}"><div class="ck ins">指</div>
-    <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[esc(i.caseName), waitMe ? esc(short(pname(i.to))) + ' 已回報，等你確認' : (i.status === '待確認' ? '已回報，等主管確認' : dueTxt(i.due)), !waitMe ? esc(short(pname(i.from))) + ' 指示' : ''].filter(String).join('・')}</div></div>${chip(waitMe ? '待你確認' : i.status, INS_CLS[i.status])}</div>`;
+    <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[esc(i.caseName), waitMe ? esc(short(pname(i.to))) + ' 已回報，等你確認' : (i.status === '已回報' ? '已回報，等主管確認' : dueTxt(i.due)), !waitMe ? esc(short(pname(i.from))) + ' 指示' : ''].filter(String).join('・')}</div></div>${chip(waitMe ? '待你確認' : i.status, INS_CLS[i.status])}</div>`;
 }
 function bindItems() {
   $$('[data-todo]').forEach(e => e.onclick = async () => {
@@ -291,6 +319,7 @@ function bindItems() {
     catch (x) { toast(x); }
   });
   $$('[data-goins]').forEach(e => e.onclick = () => openCase(e.dataset.goins, 'instr'));
+  $$('[data-golog]').forEach(e => e.onclick = () => { const [c, l] = e.dataset.golog.split('|'); openCase(c, 'log', l); });
 }
 
 function newTodo(caseId) {
@@ -314,9 +343,13 @@ function newTodo(caseId) {
   };
 }
 
-async function openCase(id, tab) {
+async function openCase(id, tab, logId) {
   busy(true, '載入案件…');
-  try { S.data = await API('case', { id }); S.cur = id; S.tab = tab || 'sum'; S.open = {}; render(); }
+  try {
+    S.data = await API('case', { id }); S.cur = id; S.tab = tab || 'sum'; S.open = logId ? { [logId]: true } : {};
+    const c = S.home && S.home.cases.find(x => x.id === id); if (c) markAct(id, c.act);
+    render(); if (logId) setTimeout(() => { const r = document.querySelector(`[data-lid="${logId}"]`); if (r) r.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 60);
+  }
   catch (e) { toast(e); } finally { busy(false); }
 }
 async function refreshCase() { S.data = await API('case', { id: S.cur }); }
@@ -328,9 +361,10 @@ function render() {
     <div class="sub">${chip(c['階段'], STAGE_CLS[c['階段']])}<span>設計師 ${esc(pname(c['負責設計師']) || '未指定')}</span>${c['客戶姓名'] ? '<span>・' + esc(c['客戶姓名']) + '</span>' : ''}</div>
     ${preview() ? `<div class="pvbar">預覽中：${esc(ME().name)} 的畫面（唯讀）</div>` : ''}`;
   $('#backbtn').onclick = async () => { busy(true, '更新中…'); try { await reloadHome(); } catch (e) { } busy(false); renderHome(); };
-  const nIns = S.data.ins.filter(i => (i.to === me && i.status === '處理中') || (i.from === me && i.status === '待確認')).length;
+  const nIns = S.data.ins.filter(i => (i.to === me && i.status === '待處理') || (i.from === me && i.status === '已回報')).length;
+  const nLog = S.data.logs.filter(l => logNeedsMe(l)).length;
   $('#nav').style.display = 'grid';
-  $('#nav').innerHTML = TABS.map(([k, n, ic]) => `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><span class="ic">${ic}</span>${n}${k === 'instr' && nIns ? `<span class="badge">${nIns}</span>` : ''}</button>`).join('');
+  $('#nav').innerHTML = TABS.map(([k, n, ic]) => { const b = k === 'instr' ? nIns : k === 'log' ? nLog : 0; return `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><span class="ic">${ic}</span>${n}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('');
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
   const fab = $('#fab'); fab.className = 'fab'; fab.style.display = 'none';
   ({ sum: vSum, log: vLog, instr: vInstr, client: vSoon, prog: vSoon, docs: vSoon })[S.tab]();
@@ -386,6 +420,22 @@ function vSum() {
   });
 }
 
+const caseDesigner = () => S.data.info['負責設計師'];
+const canSignL = l => l.signer === ME().id || ME().role === 'Boss';
+const canShareL = () => leader() || caseDesigner() === ME().id;
+function logNeedsMe(l) {
+  const me = ME().id;
+  return (l.status === '待簽核' && l.signer === me) || (l.status === '待設計師確認' && caseDesigner() === me)
+    || (l.status === '草稿' && l.by === me) || (l.status === '已簽核' && l.minor && l.signer === me)
+    || (l.status === '已簽核' && !l.shares && caseDesigner() === me);
+}
+function logStatusLine(l) {
+  const t = s => esc(String(s || '').slice(5, 16).replace('/', '/'));
+  if (l.status === '草稿') return l.returnNote ? `<div class="lst bad">被退回修改：${esc(l.returnNote)}</div>` : `<div class="lst mute">草稿，尚未送出</div>`;
+  if (l.status === '待設計師確認') return `<div class="lst warn">等 ${esc(short(pname(caseDesigner())))} 確認後送簽核</div>`;
+  if (l.status === '待簽核') return `<div class="lst ${l.overdue ? 'bad' : 'warn'}">${l.resign ? '已簽核內容被修改，' : ''}等 ${esc(short(pname(l.signer)))} ${l.resign ? '確認修改' : '簽核'}${l.escal ? '（主管轉 Boss 確認）' : ''}・期限 ${t(l.deadline)}${l.overdue ? '・<b>已逾期</b>' : ''}${l.resign ? '<br>確認前暫停分享，原本的 PDF 不會被覆蓋' : ''}</div>`;
+  return `<div class="lst ok">已簽核：${esc(short(pname(l.signedBy)))} ${t(l.signedAt)}${l.revisedAt ? '・修訂於 ' + t(l.revisedAt) : ''}・${l.shares ? `已分享 ${l.shares} 次（最後 ${esc(short(pname(l.sharedBy)))} ${t(l.sharedAt)}）` : '尚未分享給客戶'}${l.minor ? '<br>簽核後新增了照片（不需重簽）' : ''}</div>`;
+}
 function vLog() {
   const logs = S.data.logs, me = ME().id;
   if (!logs.length) { $('#main').innerHTML = `<div class="soon"><b>還沒有日誌</b>按右下角「＋ 新增日誌」開始記錄。</div>`; return; }
@@ -394,31 +444,114 @@ function vLog() {
   $('#main').innerHTML = Object.keys(byMonth).map(m => `<div class="month">${m.replace('/', ' 年 ')} 月</div><div class="lgroup">` + byMonth[m].map(l => {
     const li = S.data.ins.filter(i => i.logId === l.id);
     const lateDays = l.created ? days(String(l.created).slice(0, 10), l.date) : 0;
-    const canEdit = !preview();
+    const pv = preview(), btn = [];
+    if (!pv) {
+      if (l.status === '草稿' && (l.by === me || leader())) btn.push(`<button class="btn pri sm" data-lact="submitLog|${l.id}">送出</button>`);
+      if (l.status === '待設計師確認' && (caseDesigner() === me || ME().role === 'Boss')) btn.push(`<button class="btn pri sm" data-lact="confirmLog|${l.id}">確認送簽核</button><button class="btn ghost sm" data-lret="${l.id}">退回</button>`);
+      if (l.status === '待簽核' && canSignL(l)) {
+        btn.push(`<button class="btn ok sm" data-lact="signLog|${l.id}">${l.resign ? '確認修改' : '簽核通過'}</button><button class="btn ghost sm" data-lret="${l.id}">退回修改</button>`);
+        if (l.signer === me && ME().role === '主管') btn.push(`<button class="btn ghost sm" data-lact="escalateLog|${l.id}">轉 Boss 確認</button>`);
+      }
+      if (l.status === '已簽核' && canShareL()) btn.push(`<button class="btn pri sm" data-share="${l.id}">分享 PDF</button>`);
+    }
+    const chipTxt = l.status === '待簽核' && l.resign ? '修改待確認' : l.status === '草稿' && l.returnNote ? '退回' : l.status;
     return `<div class="lrow ${S.open[l.id] ? 'open' : ''}" data-lid="${l.id}">
       <div class="lhead"><span class="caret">▶</span><span class="ld">${esc(md(l.date))}</span>
         <span class="lgs">${l.trades.map(t => `<span class="tchip" style="background:${tcolor(t)}">${esc(t)}</span>`).join('')}</span>
         ${lateDays >= 1 ? `<span class="late">補登 ${lateDays} 天</span>` : ''}
-        ${l.issue ? '<span class="idot" title="有問題"></span>' : ''}${li.length ? `<span class="icount">${li.length}</span>` : ''}
+        ${l.status !== '已簽核' ? chip(l.overdue ? '逾期未簽' : chipTxt, l.overdue || (l.status === '草稿' && l.returnNote) ? 'c-bad' : LOG_CLS[l.status]) : ''}
+        ${logNeedsMe(l) && !pv ? '<span class="idot" title="需要你處理"></span>' : ''}
+        ${l.issue ? '<span class="idot" style="background:var(--warn)" title="有問題"></span>' : ''}${li.length ? `<span class="icount">${li.length}</span>` : ''}
         <span class="lby">${esc(short(pname(l.by)))}</span></div>
       <div class="lbody">
+        ${l.resign && l.snap ? diffHTML(l) : ''}
         <div style="white-space:pre-wrap">${esc(l.text) || '<span style="color:var(--muted)">（未填寫）</span>'}</div>
         ${l.issue ? `<div class="issue">⚠ ${esc(l.issue)}</div>` : ''}
         ${l.photos.length ? `<div class="pgrid">${l.photos.map(p => `<div class="pc" data-ph="${esc(p.path)}">${S.thumbs[p.path] ? `<img src="${S.thumbs[p.path].src}">` : ''}${p.note ? `<span>${esc(p.note)}</span>` : ''}</div>`).join('')}</div>` : ''}
+        ${logStatusLine(l)}
         <div class="stamp">${esc(short(pname(l.by)))} 建立於 ${esc(l.created)}${l.edits ? `・修改 ${l.edits} 次（最後由 ${esc(short(pname(l.editor || l.by)))} 於 ${esc(l.edited)}）` : ''}</div>
         ${li.map(insHTML).join('')}
-        <div class="btns">${canEdit ? `<button class="btn ghost sm" data-edit="${l.id}">修改這篇</button>` : ''}${leader() && !preview() ? `<button class="btn sec sm" data-newins="${l.id}">＋ 針對這篇下指示</button>` : ''}</div>
+        ${btn.length ? `<div class="btns" style="flex-wrap:wrap">${btn.join('')}</div>` : ''}
+        <div class="btns">${!pv ? `<button class="btn ghost sm" data-edit="${l.id}">修改這篇</button>` : ''}${leader() && !pv ? `<button class="btn sec sm" data-newins="${l.id}">＋ 針對這篇下指示</button>` : ''}</div>
       </div></div>`;
   }).join('') + `</div>`).join('');
   $$('.lhead').forEach(h => h.onclick = () => {
     const r = h.parentElement, id = r.dataset.lid; S.open[id] = !S.open[id]; r.classList.toggle('open', S.open[id]);
-    if (S.open[id]) loadThumbs(S.data.logs.find(x => x.id === id));
+    if (S.open[id]) { const l = S.data.logs.find(x => x.id === id); loadThumbs(l); seeMinor(l); }
   });
   $$('[data-newins]').forEach(b => b.onclick = () => newIns(b.dataset.newins));
   $$('[data-edit]').forEach(b => b.onclick = () => logForm(S.data.logs.find(x => x.id === b.dataset.edit)));
   $$('[data-ph]').forEach(p => p.onclick = () => { const t = S.thumbs[p.dataset.ph]; if (t && t.url) window.open(t.url, '_blank'); });
+  $$('[data-lact]').forEach(b => b.onclick = () => { const [a, id] = b.dataset.lact.split('|'); logAct(a, id); });
+  $$('[data-lret]').forEach(b => b.onclick = () => {
+    sheet(`<h3>退回修改</h3><div class="s">說明哪裡要改，填寫人會在工作總表看到。</div><label>退回原因</label><textarea id="rtxt" placeholder="例如：照片拍錯位置，請補上浴室排水管照片"></textarea><div class="btns"><button class="btn pri" id="rgo">退回</button></div>`);
+    $('#rgo').onclick = () => logAct('returnLog', b.dataset.lret, $('#rtxt').value.trim());
+  });
+  $$('[data-share]').forEach(b => b.onclick = () => sharePdf(b.dataset.share));
   bindIns();
-  logs.filter(l => S.open[l.id]).forEach(loadThumbs);
+  logs.filter(l => S.open[l.id]).forEach(l => { loadThumbs(l); seeMinor(l); });
+}
+const LOG_MSG = { submitLog: '已送出', confirmLog: '已確認，送主管簽核', signLog: '簽核完成，已產生 PDF', returnLog: '已退回', escalateLog: '已轉給 Boss 確認' };
+async function logAct(action, id, text) {
+  if (guard()) return;
+  if (action === 'escalateLog' && !confirm('把這篇轉給 Boss 簽核？（重大異常、費用爭議或重要決策）')) return;
+  busy(true, action === 'signLog' ? '簽核並產生 PDF…' : '處理中…');
+  try {
+    const r = await API(action, { id, text });
+    await refreshCase(); closeSheet(); S.open[id] = true; render();
+    toast(r && r.warn ? '已簽核，但 ' + r.warn : LOG_MSG[action]);
+    reloadHome().catch(() => { });
+  } catch (e) { toast(e); } finally { busy(false); }
+}
+function seeMinor(l) {
+  if (!l || !l.minor || l.signer !== ME().id || preview()) return;
+  l.minor = false; API('seenLog', { id: l.id }).catch(() => { });
+}
+/** 修改前後差異（字元層級） */
+function diffText(a, b) {
+  a = String(a || ''); b = String(b || '');
+  if (a === b) return '';
+  const n = a.length, m = b.length;
+  if (n * m > 400000) return `<del>${esc(a)}</del><ins>${esc(b)}</ins>`;
+  const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  let i = 0, j = 0, out = '', mode = '', buf = '';
+  const push = (md, ch) => { if (md !== mode) { out += mode ? `<${mode}>${esc(buf)}</${mode}>` : esc(buf); mode = md; buf = ''; } buf += ch; };
+  while (i < n && j < m) { if (a[i] === b[j]) { push('', a[i]); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) push('del', a[i++]); else push('ins', b[j++]); }
+  while (i < n) push('del', a[i++]); while (j < m) push('ins', b[j++]);
+  out += mode ? `<${mode}>${esc(buf)}</${mode}>` : esc(buf);
+  return out;
+}
+function diffHTML(l) {
+  const s = l.snap, parts = [];
+  const f = (k, a, b) => { const d = diffText(a, b); if (d) parts.push(`<div class="dk">${k}</div><div style="white-space:pre-wrap">${d}</div>`); };
+  f('施工日期', s.date, l.date); f('工種', String(s.trades || '').split(/\s*,\s*/).join('、'), l.trades.join('、'));
+  f('施工內容', s.text, l.text); f('現場問題', s.issue, l.issue);
+  const snapIds = (s.photos || []).map(p => p.id);
+  const gone = (l.gone || []).filter(p => snapIds.includes(p.id));
+  if (gone.length) parts.push(`<div class="dk">刪除的照片</div>` + gone.map(p => `<span class="gone">${S.thumbs[p.path] ? `<img src="${S.thumbs[p.path].src}">` : ''}<b>已刪除</b></span>`).join(''));
+  const added = l.photos.filter(p => !snapIds.includes(p.id));
+  if (added.length) parts.push(`<div class="dk">新增的照片：${added.length} 張（見下方）</div>`);
+  return `<div class="diff"><div class="dh">修改內容（紅色刪除線＝原本，綠色＝修改後）</div>${parts.join('') || '<div class="s">內容已改回與簽核時相同</div>'}</div>`;
+}
+async function sharePdf(id) {
+  busy(true, '產生 PDF 中…（約 10 秒）');
+  let r;
+  try { r = await API('pdfLog', { id }); } catch (e) { busy(false); return toast(e); }
+  busy(false);
+  const bytes = Uint8Array.from(atob(r.data), c => c.charCodeAt(0));
+  const file = new File([bytes], r.name, { type: 'application/pdf' });
+  const url = URL.createObjectURL(file);
+  const can = navigator.canShare && navigator.canShare({ files: [file] });
+  sheet(`<h3>分享工程日誌 PDF</h3><div class="s">${esc(r.name)}<br>PDF 已依目前的指示狀態更新，並存進案件雲端資料夾。</div>
+    <div class="btns" style="flex-direction:column">
+      ${can ? '<button class="btn pri" id="shgo">傳送（LINE、Email…）</button>' : ''}
+      <a class="btn ${can ? 'ghost' : 'pri'}" id="shdl" href="${url}" download="${esc(r.name)}" style="text-align:center;text-decoration:none">下載 PDF</a>
+      <a class="btn ghost" href="${esc(r.url)}" target="_blank" style="text-align:center;text-decoration:none">在雲端資料夾開啟</a>
+    </div><div class="hint">系統會記錄你按了分享的時間；這不代表客戶已經收到。</div>`);
+  const record = () => API('shareLog', { id }).then(refreshCase).then(() => { if (S.tab === 'log') render(); reloadHome().catch(() => { }); }).catch(() => { });
+  if (can) $('#shgo').onclick = async () => { try { await navigator.share({ files: [file], title: r.name }); closeSheet(); toast('已分享'); record(); } catch (e) { if (e && e.name !== 'AbortError') toast('分享失敗，請改用下載'); } };
+  $('#shdl').onclick = () => { record(); };
 }
 async function loadThumbs(l) {
   if (!l) return; const need = l.photos.map(p => p.path).filter(p => !S.thumbs[p]); if (!need.length) return;
@@ -429,8 +562,8 @@ function insHTML(i) {
   const me = ME().id;
   let act = '';
   if (!preview()) {
-    if (i.status === '處理中' && i.to === me) act = `<button class="btn ok sm" data-reply="${i.id}">回報完成</button>`;
-    if (i.status === '待確認' && (i.from === me || S.real.role === 'Boss' && !S.as)) act = `<button class="btn ok sm" data-close="${i.id}">確認結案</button><button class="btn ghost sm" data-ret="${i.id}">退回</button>`;
+    if (i.status === '待處理' && i.to === me) act = `<button class="btn ok sm" data-reply="${i.id}">回報結果</button>`;
+    if (i.status === '已回報' && (i.from === me || S.real.role === 'Boss' && !S.as)) act = `<button class="btn ok sm" data-close="${i.id}">確認結案</button><button class="btn ghost sm" data-ret="${i.id}">退回</button>`;
   }
   return `<div class="instr"><div class="row2"><div style="flex:1">${esc(i.text)}</div>${chip(i.status, INS_CLS[i.status])}</div>
     <div class="who">${esc(pname(i.from))} → ${esc(pname(i.to) || '未指定')}${i.due ? '・' + dueTxt(i.due, i.status === '已結案') : ''}${i.returns ? '・退回 ' + i.returns + ' 次' : ''}</div>
@@ -466,9 +599,10 @@ function newIns(logId) {
   const ppl = S.home.people.filter(p => p.id !== ME().id);
   const lg = S.data.logs.find(l => l.id === logId);
   sheet(`<h3>下指示</h3><div class="s">${esc(S.data.info['案件名稱'])}${lg ? '・針對 ' + esc(md(lg.date)) + ' 日誌' : ''}</div>
-    <label>指示內容</label><textarea id="itxt" placeholder="例如：浴室排水管封板前先拍完整照片給我看"></textarea>
-    <label>交給誰</label><div class="seg" id="ito">${ppl.map((p, k) => `<button data-p="${p.id}" class="${k === 0 ? 'on' : ''}">${esc(short(p.name))}</button>`).join('')}</div>
-    <label>期限</label><input type="date" id="idue">
+    <label>指示內容</label><textarea id="itxt" placeholder="例如：浴室排水管封板前先拍完整照片確認"></textarea>
+    <div class="warnbox">${PUBLIC_HINT}</div>
+    <label>負責人（可不指定）</label><div class="seg" id="ito"><button data-p="" class="on">不指定</button>${ppl.map(p => `<button data-p="${p.id}">${esc(short(p.name))}</button>`).join('')}</div>
+    <label>期限（可不填）</label><input type="date" id="idue">
     <div class="btns"><button class="btn pri" id="igo">送出指示</button></div>`);
   $$('#ito button').forEach(b => b.onclick = () => { $$('#ito button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
   $('#igo').onclick = async () => {
@@ -489,7 +623,11 @@ function logForm(log) {
   const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   NL = { id: log ? log.id : null, trades: log ? log.trades.slice() : [], photos: [], old: log ? log.photos.slice() : [] };
   const names = S.home.trades.map(t => t.name), extra = NL.trades.filter(t => !names.includes(t));
+  const draft = !log || log.status === '草稿';
+  const signed = log && (log.status === '已簽核' || log.resign || log.signedOnce);
   sheet(`<h3>${log ? '修改日誌' : '新增日誌'}</h3><div class="s">${esc(S.data.info['案件名稱'])}${log ? '・建立於 ' + esc(log.created) + '（建立時間不會改變）' : ''}</div>
+    ${log && log.returnNote && log.status === '草稿' ? `<div class="lst bad">被退回修改：${esc(log.returnNote)}</div>` : ''}
+    ${signed && log.status !== '草稿' ? `<div class="warnbox">這篇已簽核。修改施工內容、問題、日期、工種，或刪除照片，需要主管重新確認（確認前暫停分享）；只新增照片不需要。</div>` : ''}
     <label>施工日期</label><input type="date" id="ldate" value="${log ? String(log.date).replace(/\//g, '-') : today}">
     <div class="hint" id="latehint"></div>
     <label>今天的工種（可複選）</label><div class="tpick" id="ltr">${names.concat(extra).map(n => `<button data-t="${esc(n)}">${esc(n)}</button>`).join('')}<button class="other" id="oth">＋ 其他</button></div>
@@ -498,7 +636,8 @@ function logForm(log) {
     <label>照片</label><label class="addph" for="lfile" style="margin:0">📷 拍照或選照片</label><input type="file" id="lfile" accept="image/jpeg,image/png,image/heic,image/heif,image/webp" multiple style="display:none">
     <div class="phl" id="lph"></div>
     <label>發現問題（沒有就留空）</label><input id="liss" value="${log ? esc(log.issue) : ''}" placeholder="例如：浴室排水管位置與圖面不符">
-    <div class="btns"><button class="btn pri" id="lgo">${log ? '儲存修改' : '儲存日誌'}</button></div>
+    <div class="hint">${PUBLIC_HINT}</div>
+    <div class="btns">${draft ? `<button class="btn pri" id="lgo">送出</button><button class="btn ghost" id="ldraft">先存草稿</button>` : `<button class="btn pri" id="lgo">儲存修改</button>`}</div>
     <div class="hint">系統會記下建立時間；施工日期早於建立日期，會標示「補登」。</div>`);
   const paint = () => $$('#ltr button[data-t]').forEach(b => { const on = NL.trades.includes(b.dataset.t), c = tcolor(b.dataset.t); b.classList.toggle('on', on); b.style.background = on ? c : '#fff'; b.style.borderColor = on ? c : 'var(--line)'; });
   const bindT = () => $$('#ltr button[data-t]').forEach(b => b.onclick = () => { const t = b.dataset.t; NL.trades = NL.trades.includes(t) ? NL.trades.filter(x => x !== t) : NL.trades.concat(t); paint(); });
@@ -517,7 +656,8 @@ function logForm(log) {
     for (const f of files) { try { NL.photos.push({ data: await shrink(f), note: '' }); } catch (x) { toast('有一張照片讀取失敗'); } }
     drawPh();
   };
-  $('#lgo').onclick = saveLogNow;
+  $('#lgo').onclick = () => saveLogNow(draft);
+  if ($('#ldraft')) $('#ldraft').onclick = () => saveLogNow(false);
   drawPh();
   if (log) loadThumbs(log).then(drawPh);
 }
@@ -546,15 +686,15 @@ function shrink(file, max = 1600) {
     img.onerror = no; img.src = url;
   });
 }
-async function saveLogNow() {
+async function saveLogNow(submit) {
   const text = $('#ltxt').value.trim();
   if (!text && !NL.photos.length && !NL.old.length) return toast('請至少寫一句今日狀況或放一張照片');
   if (!NL.trades.length) return toast('請選今天的工種');
   busy(true, NL.photos.length ? `上傳 ${NL.photos.length} 張照片中…` : '儲存中…');
   try {
-    const p = { caseId: S.cur, date: $('#ldate').value, trades: NL.trades, text, issue: $('#liss').value.trim(), photos: NL.photos };
+    const p = { caseId: S.cur, date: $('#ldate').value, trades: NL.trades, text, issue: $('#liss').value.trim(), photos: NL.photos, submit: !!submit };
     const id = NL.id ? await API('updateLog', Object.assign({ id: NL.id }, p)) : await API('saveLog', p);
-    await refreshCase(); closeSheet(); S.tab = 'log'; S.open = { [id]: true }; render(); toast(NL.id ? '已儲存修改' : '日誌已儲存');
+    await refreshCase(); closeSheet(); S.tab = 'log'; S.open = { [id]: true }; render(); toast(submit ? '已送出' : NL.id ? '已儲存修改' : '已存成草稿'); reloadHome().catch(() => { });
   } catch (e) { toast(e); } finally { busy(false); }
 }
 
@@ -625,6 +765,14 @@ function logout() {
   S.home = null; S.real = null; S.as = ''; showLogin();
 }
 
+const ACT_KEY = 'housen_act';
+function actSeen() {
+  let m; try { m = JSON.parse(localStorage.getItem(ACT_KEY) || 'null'); } catch (e) { m = null; }
+  if (!m && S.home) { m = {}; S.home.cases.forEach(c => m[c.id] = c.act || ''); localStorage.setItem(ACT_KEY, JSON.stringify(m)); }
+  m = m || {}; if (S.home) S.home.cases.forEach(c => { if (m[c.id] === undefined) m[c.id] = ''; });
+  return m;
+}
+function markAct(id, act) { const m = actSeen(); m[id] = act || ''; localStorage.setItem(ACT_KEY, JSON.stringify(m)); }
 const SEEN_KEY = 'housen_seen';
 function seenSet() { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch (e) { return new Set(); } }
 function itemKey(i) { return i.kind + ':' + i.id + ':' + (i.status || ''); }
@@ -636,8 +784,8 @@ function notifyNew() {
   const fresh = open.filter(i => !seen.has(itemKey(i)) && i.from !== ME().id);
   S.newKeys = new Set(first ? [] : fresh.map(itemKey));
   if (!first && fresh.length) {
-    const nIns = fresh.filter(i => i.kind === 'ins').length, nTodo = fresh.length - nIns;
-    toast('你有 ' + [nIns ? nIns + ' 則新指示／回報' : '', nTodo ? nTodo + ' 件新待辦' : ''].filter(String).join('、'));
+    const nIns = fresh.filter(i => i.kind === 'ins').length, nLog = fresh.filter(i => i.kind === 'log').length, nTodo = fresh.length - nIns - nLog;
+    toast('你有 ' + [nLog ? nLog + ' 篇日誌要處理' : '', nIns ? nIns + ' 則新指示／回報' : '', nTodo ? nTodo + ' 件新待辦' : ''].filter(String).join('、'));
     if (navigator.setAppBadge) navigator.setAppBadge(open.length).catch(() => { });
   }
   localStorage.setItem(SEEN_KEY, JSON.stringify(open.map(itemKey)));
