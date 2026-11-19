@@ -165,6 +165,9 @@ textarea{min-height:84px;resize:vertical}
 .cdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bad);margin-left:6px;vertical-align:middle}
 /* 驗收修正 2026-11-19：點擊範圍、滑動提示、長字換行、橫式版面、更新失敗提示 */
 .pv button{min-height:40px;padding:9px 14px;font-size:13px}
+.ov .ovlog{margin-top:10px;font-size:13.5px;line-height:1.6;overflow-wrap:anywhere}.ov .ovst{font-size:11px;color:var(--warn)}
+.ov .ovph{display:flex;gap:6px;margin-top:8px;align-items:center}.ov .ovph span{width:64px;height:48px;border-radius:7px;overflow:hidden;background:#ece6de;display:block}.ov .ovph img{width:100%;height:100%;object-fit:cover}.ov .ovph em{font-style:normal;font-size:12px;color:var(--muted)}
+.ov .issue{margin-top:8px}
 .plist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .prow{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .phead{display:flex;gap:10px;align-items:flex-start;padding:12px 12px;cursor:pointer}
@@ -316,6 +319,7 @@ function renderHome() {
   }
   html += `</div>`;
 
+  if (leader() && !preview()) html += overviewHTML(h);
   const live = h.cases.filter(c => c.status !== '已結案' && c.status !== '未成交');
   const list = live.filter(c => S.filter === 'all' || c.designer === me.id);
   html += `<h2>進行中案件<small>點選進入</small>${canCase() && !preview() ? '<span class="act" id="addCase">＋ 新增案件</span>' : ''}</h2>
@@ -329,6 +333,9 @@ function renderHome() {
   $('#main').innerHTML = html;
   $$('[data-f]').forEach(b => b.onclick = () => { S.filter = b.dataset.f; renderHome(); });
   $$('[data-case]').forEach(e => e.onclick = () => openCase(e.dataset.case, 'sum'));
+  $$('[data-ovcase]').forEach(e => e.onclick = () => { const [c, l] = e.dataset.ovcase.split('|'); openCase(c, 'log', l || undefined); });
+  $$('[data-trk]').forEach(e => e.onclick = () => openCase(e.dataset.trk, 'instr'));
+  ovThumbs();
   bindItems();
   if ($('#tgDone')) $('#tgDone').onclick = () => { S.showDone = !S.showDone; renderHome(); };
   if ($('#addTodo')) $('#addTodo').onclick = () => newTodo('');
@@ -337,6 +344,43 @@ function renderHome() {
   window.scrollTo(0, 0);
 }
 
+/* ===== 主管的現場總覽：看紀錄有沒有落實、現場在做什麼、有什麼問題（只看，不加批准） ===== */
+const ageOf = d => d ? -days(d, S.home.today) : null;
+const ageTxt = n => n === 0 ? '今天' : n === 1 ? '昨天' : n + ' 天前';
+function overviewHTML(h) {
+  const ov = h.overview || [], tk = h.tracking || [];
+  if (!ov.length && !tk.length) return '';
+  let html = `<h2>現場總覽<small>施工中・開案前 ${ov.length} 案</small></h2>`;
+  html += ov.map(c => {
+    const a = c.last ? ageOf(c.last.date) : null;
+    const cls = a === null ? 'c-mute' : a <= 1 ? 'c-ok' : a <= 3 ? 'c-warn' : 'c-bad';
+    const p = c.plan, late = p ? p.lateEnd + p.lateStart : 0;
+    return `<div class="card tap ov" data-ovcase="${c.id}|${c.last ? c.last.id : ''}">
+      <div class="row2"><div><div class="t">${esc(c.name)}</div><div class="s">${esc(c.stage)}・設計師 ${esc(short(pname(c.designer)) || '未指定')}・近 7 天 ${c.logs7} 篇日誌</div></div>${chip(c.last ? '日誌 ' + ageTxt(a) : '沒有日誌', cls)}</div>
+      ${c.last ? `<div class="ovlog"><b>${esc(md(c.last.date))}</b> ${esc(short(pname(c.last.by)))}：${esc(c.last.text) || '<span style="color:var(--muted)">（未填內容）</span>'}${c.last.status !== '已簽核' ? ` <span class="ovst">${esc(c.last.status)}</span>` : ''}</div>
+        ${c.last.photos.length ? `<div class="ovph">${c.last.photos.map(x => `<span data-thumb="${esc(x)}">${S.thumbs[x] ? `<img src="${S.thumbs[x].src}">` : ''}</span>`).join('')}${c.last.nPhotos > 3 ? `<em>+${c.last.nPhotos - 3}</em>` : ''}</div>` : ''}` : ''}
+      ${c.issue ? `<div class="issue">⚠ ${esc(md(c.issue.date))}：${esc(c.issue.text)}</div>` : ''}
+      <div class="mini">
+        <span class="${c.insLate ? 'bad' : ''}">指示待處理 ${c.insOpen}${c.insLate ? `（逾期 ${c.insLate}）` : ''}</span>
+        ${c.insWait ? `<span>已回報待確認 ${c.insWait}</span>` : ''}
+        ${p ? `<span>工序完成 ${p.done}/${p.total}</span>${late ? `<span class="bad">與計畫差異 ${late} 項</span>` : ''}` : '<span>未排進度計畫</span>'}
+      </div></div>`;
+  }).join('');
+  if (tk.length) {
+    html += `<h2>我交辦、還沒回報<small>${tk.length} 則</small></h2><div class="tl">` + tk.map(i => {
+      const age = ageOf(String(i.created).slice(0, 10));
+      return `<div class="todo" data-trk="${i.caseId}"><div class="ck ins">指</div><div style="flex:1"><div class="tt">${esc(i.text)}</div>
+        <div class="s">${[esc(i.caseName), i.to ? '交給 ' + esc(short(pname(i.to))) : '未指定負責人', i.due ? (i.late ? `<span class="bad">期限 ${esc(md(i.due))}（已逾期）</span>` : '期限 ' + esc(md(i.due))) : '', '已交辦 ' + (age === 0 ? '今天' : age + ' 天')].filter(String).join('・')}</div></div>${chip(i.late ? '逾期' : '待回報', i.late ? 'c-bad' : 'c-info')}</div>`;
+    }).join('') + `</div>`;
+  }
+  return html;
+}
+async function ovThumbs() {
+  const want = $$('[data-thumb]').map(e => e.dataset.thumb).filter(x => !S.thumbs[x]);
+  if (!want.length) return;
+  try { Object.assign(S.thumbs, await API('thumbs', { paths: [...new Set(want)] })); } catch (e) { return; }
+  $$('[data-thumb]').forEach(e => { const t = S.thumbs[e.dataset.thumb]; if (t && !e.firstChild) e.innerHTML = `<img src="${t.src}">`; });
+}
 const LOG_TASK = {
   sign: ['簽核', '待簽核', 'c-warn'], resign: ['確認修改', '修改待確認', 'c-warn'], overdue: ['逾期未簽', '逾期未簽', 'c-bad'],
   confirm: ['確認日誌', '待你確認', 'c-warn'], returned: ['被退回', '退回', 'c-bad'], draft: ['草稿未送出', '草稿', 'c-mute'],
@@ -450,7 +494,7 @@ function vProg() {
   const st = p => p.actEnd ? ['施工完成', 'c-ok'] : p.actStart ? ['進行中', 'c-info'] : ['未開始', 'c-mute'];
   let h = `<div class="card"><div class="t">${locked ? '進度計畫已定案' : '進度計畫草擬中'}</div>
     <div class="s">${locked ? `${esc(short(pname(d.planLockedBy)))} 於 ${esc(String(d.planLocked).slice(0, 16))} 定案。之後改期只改「目前計畫」並須填原因，原計畫保留作比對。` : '日期可直接調整；主管「定案」後，原計畫會固定下來，之後改期要填原因。'}</div>
-    <div class="lst warn">查驗與放行的規則還在等 Boss 決定，這一頁目前只處理「排計畫、確認實際開始、施工完成」。</div>
+    <div class="lst mute">進度計畫用來比對預計與實際的差異，不需要主管逐項批准；現場由負責人推進。</div>
     ${can ? `<div class="btns" style="flex-wrap:wrap">${!items.length ? '<button class="btn sec sm" id="ptpl">套用工序範本（示範）</button>' : ''}<button class="btn ghost sm" id="padd">＋ 新增工序</button>${leader() && !locked && items.length ? '<button class="btn pri sm" id="plock">定案</button>' : ''}</div>` : ''}</div>`;
   if (!items.length) h += `<div class="soon"><b>還沒有工序</b>${can ? '可以先套用範本（示範內容，待 Boss 確認），再依案件調整。' : '等負責設計師排定。'}</div>`;
   h += `<div class="plist">` + items.map((p, i) => {
@@ -460,7 +504,7 @@ function vProg() {
       <div class="phead"><span class="pno">${i + 1}</span><div class="pmain"><div class="pt">${p.trade ? `<span class="tchip" style="background:${tcolor(p.trade)}">${esc(p.trade)}</span> ` : ''}${esc(p.name)}</div>
         <div class="ps">計畫 ${range(p.start, p.end)}${moved ? `<span class="pold">原 ${range(p.baseStart, p.baseEnd)}</span>` : ''}</div>
         <div class="ps">實際 ${p.actStart ? ymdShort(p.actStart) + ' 開始' : '—'}${p.actEnd ? '・' + ymdShort(p.actEnd) + ' 完成' : ''}</div>
-        ${p.check ? `<div class="ps pchk">查驗點：${esc(p.check)}（規則待定）</div>` : ''}
+        ${p.check ? `<div class="ps pchk">查驗點：${esc(p.check)}（記錄用，做法待定）</div>` : ''}
         ${hint ? `<div class="phint">日誌參考：${ymdShort(hint)} 有「${esc(p.trade)}」日誌${can ? '，請確認是否為實際開始日' : ''}</div>` : ''}
       </div>${chip(stt, cls)}</div>
       <div class="pbody">

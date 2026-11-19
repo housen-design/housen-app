@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v3.3（進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
+ * 浩森設計工作管理系統｜後端 v3.4（現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -305,7 +305,38 @@ function getHome_(me) {
     if (st === LS.SIGNED && designer === me.id && !(+l['分享次數'])) add('send');
     if (st === LS.SIGNED && l['小修待看'] === 'Y' && signer === me.id) add('minor');
   });
-  return { me, people, trades, cases, items, today: today_(), now: fmt_(new Date(), 'yyyy/MM/dd HH:mm'), testMode: TEST_MODE };
+  // 主管的現場總覽：施工中與開案前案件的最新日誌、照片、問題、指示與進度差異（只讀、不設任何批准）
+  let overview = [], tracking = [];
+  if (me.leader) {
+    const t = today_(), cut = fmt_(new Date(Date.now() - 14 * 864e5), 'yyyy/MM/dd');
+    const photos = readTable_('日誌照片'), plan = tryTable_('進度計畫');
+    overview = caseRows.filter(c => c['狀態'] !== '已結案' && c['狀態'] !== '未成交' && ['施工', '開案前'].indexOf(c['階段']) >= 0).map(c => {
+      const cid = c['案件ID'];
+      const cl = logs.filter(l => l['案件ID'] === cid).sort((a, b) => (b['日期'] + b['建立時間']).localeCompare(a['日期'] + a['建立時間']));
+      const last = cl[0], issue = cl.find(l => l['發現問題'] && l['日期'] >= cut);
+      const ci = ins.filter(i => i['案件ID'] === cid), pl = plan.filter(r => r['案件ID'] === cid && r['狀態'] !== '取消');
+      const lp = last ? activePhotos_(last['日誌ID'], photos) : [];
+      return {
+        id: cid, name: c['案件名稱'], designer: c['負責設計師'], stage: c['階段'],
+        last: last ? { id: last['日誌ID'], date: last['日期'], by: last['填寫人'], text: String(last['今日狀況'] || '').slice(0, 90), status: logStatus_(last), photos: lp.slice(0, 3).map(x => x['照片']), nPhotos: lp.length } : null,
+        logs7: cl.filter(l => l['日期'] >= fmt_(new Date(Date.now() - 7 * 864e5), 'yyyy/MM/dd')).length,
+        issue: issue ? { id: issue['日誌ID'], date: issue['日期'], text: String(issue['發現問題']).slice(0, 90) } : null,
+        insOpen: ci.filter(i => i['狀態'] === IS.TODO).length,
+        insLate: ci.filter(i => i['狀態'] === IS.TODO && i['期限'] && i['期限'] < t).length,
+        insWait: ci.filter(i => i['狀態'] === IS.REPLIED).length,
+        plan: pl.length ? {
+          total: pl.length, done: pl.filter(r => r['實際完成']).length,
+          lateEnd: pl.filter(r => r['目前計畫完成'] && r['目前計畫完成'] < t && !r['實際完成']).length,
+          lateStart: pl.filter(r => r['目前計畫開始'] && r['目前計畫開始'] < t && !r['實際開始']).length
+        } : null
+      };
+    });
+    tracking = ins.filter(i => i['下指示人'] === me.id && i['狀態'] === IS.TODO).map(i => ({
+      id: i['指示ID'], caseId: i['案件ID'], caseName: cname(i['案件ID']), text: i['指示內容'], to: i['負責人'], due: i['期限'],
+      created: i['建立時間'], late: !!i['期限'] && i['期限'] < t
+    })).sort((a, b) => a.created.localeCompare(b.created));
+  }
+  return { me, people, trades, cases, items, overview, tracking, today: today_(), now: fmt_(new Date(), 'yyyy/MM/dd HH:mm'), testMode: TEST_MODE };
 }
 
 function getCase_(me, p) {
