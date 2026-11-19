@@ -168,6 +168,7 @@ textarea{min-height:84px;resize:vertical}
 .ov .ovlog{margin-top:10px;font-size:13.5px;line-height:1.6;overflow-wrap:anywhere}.ov .ovst{font-size:11px;color:var(--warn)}
 .ov .ovph{display:flex;gap:6px;margin-top:8px;align-items:center}.ov .ovph span{width:64px;height:48px;border-radius:7px;overflow:hidden;background:#ece6de;display:block}.ov .ovph img{width:100%;height:100%;object-fit:cover}.ov .ovph em{font-style:normal;font-size:12px;color:var(--muted)}
 .ov .issue{margin-top:8px}
+.spad{width:100%;height:170px;border:1.5px dashed var(--line);border-radius:12px;background:#fff;touch-action:none;display:block}
 .plist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .prow{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .phead{display:flex;gap:10px;align-items:flex-start;padding:12px 12px;cursor:pointer}
@@ -470,10 +471,11 @@ function render() {
   $('#nav').innerHTML = TABS.map(([k, n, ic]) => { const b = k === 'instr' ? nIns : k === 'log' ? nLog : 0; return `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><span class="ic">${ic}</span>${n}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('');
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
   const fab = $('#fab'); fab.className = 'fab'; fab.style.display = 'none';
-  ({ sum: vSum, log: vLog, instr: vInstr, client: vSoon, prog: vProg, docs: vSoon })[S.tab]();
+  ({ sum: vSum, log: vLog, instr: vInstr, client: vClient, prog: vProg, docs: vSoon })[S.tab]();
   if (preview()) return;
   if (S.tab === 'log') { fab.style.display = 'block'; fab.textContent = '＋ 新增日誌'; fab.onclick = () => logForm(null); }
   if (S.tab === 'instr' && leader()) { fab.style.display = 'block'; fab.textContent = '＋ 下指示'; fab.onclick = () => newIns(''); }
+  if (S.tab === 'client') { fab.style.display = 'block'; fab.textContent = '＋ 記錄客戶指示'; fab.onclick = () => ciForm(null, ''); }
 }
 
 /* ===== 進度計畫（第 4 項先行部分；查驗與放行規則待定） ===== */
@@ -841,6 +843,151 @@ function newIns(logId) {
     const to = $('#ito button.on');
     busy(true); try { await API('saveIns', { caseId: S.cur, logId, text, to: to ? to.dataset.p : '', due: $('#idue').value }); await refreshCase(); closeSheet(); render(); toast('指示已送出'); } catch (e) { toast(e); } finally { busy(false); }
   };
+}
+
+/* ===== 客戶頁：客戶指示、會議記錄、客戶確認、追加減 ===== */
+const fmtMoney = v => v === '' || v == null ? '' : (Number(v) < 0 ? '−' : '') + 'NT$ ' + Math.abs(Number(String(v).replace(/[^0-9.\-]/g, '')) || 0).toLocaleString();
+const CI_CLS = { '待確認': 'c-warn', '已確認': 'c-ok', '客戶不同意': 'c-bad' };
+const canCI = x => leader() || S.data.info['負責設計師'] === ME().id || (x && x.by === ME().id);
+function ciHTML(x) {
+  const pv = preview();
+  return `<div class="prow ${S.copen && S.copen[x.id] ? 'open' : ''}" data-cid="${x.id}">
+    <div class="phead"><div class="pmain"><div class="pt">${esc(x.text)}</div>
+      <div class="ps">${esc(md(x.date))}・${esc(x.source)}・${esc(short(pname(x.by)))} 記錄</div>
+      ${x.impact ? `<div class="ps pchk">影響費用或工期${x.amount ? '・追加減 ' + fmtMoney(x.amount) : ''}${x.days ? '・工期 ' + esc(x.days) + ' 天' : ''}</div>` : ''}</div>${chip(x.status, CI_CLS[x.status])}</div>
+    <div class="pbody">
+      ${x.locked ? `<div class="lst ok">${esc(x.status)}：${esc(x.method)}・${esc(String(x.confirmedAt).slice(5, 16))}${x.note ? '<br>' + esc(x.note) : ''}</div>
+        <div class="pgrid">${[x.sign, x.shot].filter(Boolean).map(p => `<div class="pc" data-ph="${esc(p)}">${S.thumbs[p] ? `<img src="${S.thumbs[p].src}">` : ''}<span>${p === x.sign ? '客戶簽名' : '回覆截圖'}</span></div>`).join('')}</div>` : ''}
+      ${!pv ? `<div class="btns" style="flex-wrap:wrap">
+        ${!x.locked && canCI(x) ? `<button class="btn pri sm" data-cconf="${x.id}">登記客戶確認</button><button class="btn ghost sm" data-cedit="${x.id}">修改</button>` : ''}
+        ${canCI(null) ? `<button class="btn ghost sm" data-cpdf="${x.id}">確認單 PDF</button>` : ''}</div>` : ''}
+      ${x.locked ? '<div class="hint">已確認的紀錄不能修改；要更正請另記一筆。</div>' : ''}
+    </div></div>`;
+}
+function vClient() {
+  const d = S.data, pv = preview(), loose = d.cins.filter(x => !x.meetingId);
+  S.copen = S.copen || {};
+  const pending = d.cins.filter(x => x.status === '待確認').length;
+  const imp = d.cins.filter(x => x.impact), sum = (l, k) => l.reduce((a, x) => a + (Number(x[k]) || 0), 0);
+  const okImp = imp.filter(x => x.status === '已確認'), waitImp = imp.filter(x => x.status === '待確認');
+  let h = `<div class="kpis"><div class="kpi"><b>${pending}</b><span>待客戶確認</span></div><div class="kpi"><b>${imp.length}</b><span>影響費用或工期</span></div></div>`;
+  if (imp.length) h += `<h2>追加減一覽</h2><div class="card"><dl class="info">
+    <dt>已確認</dt><dd>${okImp.length} 項・${fmtMoney(sum(okImp, 'amount')) || 'NT$ 0'}・工期 ${sum(okImp, 'days')} 天</dd>
+    <dt>待確認</dt><dd>${waitImp.length} 項・${fmtMoney(sum(waitImp, 'amount')) || 'NT$ 0'}・工期 ${sum(waitImp, 'days')} 天</dd></dl>
+    <div class="hint">影響工期的項目，請到「進度」頁調整相關工序並填寫原因。</div></div>`;
+  h += `<h2>會議記錄<small>${d.meetings.length} 場</small>${!pv ? '<span class="act" id="addMeet">＋ 新增會議</span>' : ''}</h2>`;
+  h += d.meetings.length ? `<div class="plist">` + d.meetings.map(m => {
+    const items = d.cins.filter(x => x.meetingId === m.id);
+    return `<div class="prow ${S.copen[m.id] ? 'open' : ''}" data-cid="${m.id}">
+      <div class="phead"><div class="pmain"><div class="pt">${esc(m.name)}</div><div class="ps">${esc(md(m.date))}${m.attendees ? '・' + esc(m.attendees) : ''}・${items.length} 項決議</div></div>${chip(m.reviewedBy ? '已核對' : m.summary ? '待核對' : '未整理', m.reviewedBy ? 'c-ok' : 'c-warn')}</div>
+      <div class="pbody">
+        ${m.audio ? `<div class="s"><a href="${esc(m.audio)}" target="_blank" rel="noopener">開啟錄音檔</a></div>` : ''}
+        ${m.summary ? `<div class="lst mute" style="white-space:pre-wrap">${esc(m.summary)}</div>` : '<div class="s">尚未填寫重點摘要</div>'}
+        ${m.reviewedBy ? `<div class="s">${esc(short(pname(m.reviewedBy)))} 於 ${esc(String(m.reviewedAt).slice(5, 16))} 核對</div>` : ''}
+        <div class="plist">${items.map(ciHTML).join('')}</div>
+        ${!pv ? `<div class="btns" style="flex-wrap:wrap"><button class="btn sec sm" data-mitem="${m.id}">＋ 新增決議事項</button><button class="btn ghost sm" data-medit="${m.id}">編輯會議</button>
+          ${m.summary && !m.reviewedBy && canCI(null) ? `<button class="btn ok sm" data-mrev="${m.id}">核對摘要無誤</button>` : ''}
+          ${canCI(null) ? `<button class="btn pri sm" data-mpdf="${m.id}">會議記錄 PDF</button>` : ''}</div>` : ''}
+      </div></div>`;
+  }).join('') + `</div>` : '<div class="empty">還沒有會議記錄</div>';
+  h += `<h2>臨時客戶指示<small>LINE、口頭、電話</small></h2>`;
+  h += loose.length ? `<div class="plist">${loose.map(ciHTML).join('')}</div>` : '<div class="empty">還沒有紀錄。客戶用 LINE 或口頭交代的事，按右下角記下來。</div>';
+  $('#main').innerHTML = h;
+  $$('.phead').forEach(e => e.onclick = ev => { ev.stopPropagation(); const r = e.parentElement, id = r.dataset.cid; S.copen[id] = !S.copen[id]; r.classList.toggle('open', S.copen[id]); if (S.copen[id]) ciThumbs(); });
+  const fx = id => d.cins.find(x => x.id === id), fm = id => d.meetings.find(x => x.id === id);
+  if ($('#addMeet')) $('#addMeet').onclick = () => meetForm(null);
+  $$('[data-medit]').forEach(b => b.onclick = () => meetForm(fm(b.dataset.medit)));
+  $$('[data-mitem]').forEach(b => b.onclick = () => ciForm(null, b.dataset.mitem));
+  $$('[data-mrev]').forEach(b => b.onclick = () => planAct('reviewMeeting', { id: b.dataset.mrev }, '已核對'));
+  $$('[data-mpdf]').forEach(b => b.onclick = () => docShare('clientPdf', { meetingId: b.dataset.mpdf }));
+  $$('[data-cpdf]').forEach(b => b.onclick = () => docShare('clientPdf', { insId: b.dataset.cpdf }));
+  $$('[data-cedit]').forEach(b => b.onclick = () => ciForm(fx(b.dataset.cedit), ''));
+  $$('[data-cconf]').forEach(b => b.onclick = () => ciConfirm(fx(b.dataset.cconf)));
+  $$('[data-ph]').forEach(p => p.onclick = () => { const t = S.thumbs[p.dataset.ph]; if (t && t.url) window.open(t.url, '_blank'); });
+  ciThumbs();
+}
+async function ciThumbs() {
+  S.thumbTried = S.thumbTried || {};
+  const want = S.data.cins.filter(x => S.copen[x.id] || (x.meetingId && S.copen[x.meetingId])).flatMap(x => [x.sign, x.shot]).filter(p => p && !S.thumbs[p] && !S.thumbTried[p]);
+  if (!want.length) return;
+  want.forEach(p => S.thumbTried[p] = true);
+  try { const got = await API('thumbs', { paths: want }); Object.assign(S.thumbs, got); if (Object.keys(got).length && S.tab === 'client') vClient(); } catch (e) { }
+}
+function meetForm(m) {
+  if (guard()) return;
+  sheet(`<h3>${m ? '編輯會議' : '新增會議記錄'}</h3><div class="s">現場會勘、階段驗收、材料確認等正式討論。錄音請先存到案件雲端資料夾，再貼連結。</div>
+    <label>會議名稱</label><input id="mn" value="${esc(m ? m.name : '')}" placeholder="例如：泥作完成階段驗收">
+    <label>日期</label><input type="date" id="md" value="${toInput(m ? m.date : today())}">
+    <label>出席人</label><input id="ma" value="${esc(m ? m.attendees : '')}" placeholder="例如：王先生、王太太、蘋芳、水電師傅">
+    <label>錄音檔連結（選填）</label><input id="mau" value="${esc(m ? m.audio : '')}" placeholder="Google 雲端硬碟檔案連結">
+    <label>重點摘要（可貼上 AI 整理的內容，存檔後由設計師核對）</label><textarea id="ms" style="min-height:120px">${esc(m ? m.summary : '')}</textarea>
+    ${m && m.reviewedBy ? '<div class="warnbox">修改後需要重新核對摘要。</div>' : ''}
+    <div class="btns"><button class="btn pri" id="mgo">儲存</button></div>`);
+  $('#mgo').onclick = () => { const name = $('#mn').value.trim(); if (!name) return toast('請填寫會議名稱'); planAct('saveMeeting', { caseId: S.cur, id: m ? m.id : '', name, date: $('#md').value, attendees: $('#ma').value.trim(), audio: $('#mau').value.trim(), summary: $('#ms').value.trim() }, '已儲存會議記錄'); };
+}
+function ciForm(x, meetingId) {
+  if (guard()) return;
+  const mid = x ? x.meetingId : meetingId;
+  sheet(`<h3>${x ? '修改客戶指示' : mid ? '新增會議決議事項' : '記錄客戶指示'}</h3><div class="s">${mid ? '會議：' + esc((S.data.meetings.find(m => m.id === mid) || {}).name || '') : '客戶用 LINE、口頭或電話交代的事'}</div>
+    ${!mid ? `<label>來源</label><div class="seg" id="csrc">${['LINE', '口頭', '電話', '其他'].map(o => `<button data-v="${o}" class="${(x ? x.source : 'LINE') === o ? 'on' : ''}">${o}</button>`).join('')}</div>` : ''}
+    <label>日期</label><input type="date" id="cd" value="${toInput(x ? x.date : today())}">
+    <label>內容</label><textarea id="ct" placeholder="例如：客戶希望主臥衣櫃改成到頂，門片改為灰色">${esc(x ? x.text : '')}</textarea>
+    <label>是否影響費用或工期</label><div class="seg" id="cimp"><button data-v="N" class="${x && x.impact ? '' : 'on'}">不影響</button><button data-v="Y" class="${x && x.impact ? 'on' : ''}">會影響</button></div>
+    <div id="cimpbox" style="display:${x && x.impact ? 'block' : 'none'}"><div class="dgrid"><div><label>追加減金額（減項填負數）</label><input id="ca" inputmode="numeric" value="${esc(x ? x.amount : '')}"></div><div><label>影響工期（天）</label><input id="cdy" inputmode="numeric" value="${esc(x ? x.days : '')}"></div></div>
+    <div class="warnbox">影響費用或工期的事項，請先讓客戶確認再施工。</div></div>
+    <div class="btns"><button class="btn pri" id="cgo">儲存</button></div>`);
+  const segv = id => { const b = document.querySelector(`#${id} .on`); return b ? b.dataset.v : ''; };
+  ['csrc', 'cimp'].forEach(id => $$(`#${id} button`).forEach(b => b.onclick = () => { $$(`#${id} button`).forEach(o => o.classList.remove('on')); b.classList.add('on'); if (id === 'cimp') $('#cimpbox').style.display = b.dataset.v === 'Y' ? 'block' : 'none'; }));
+  $('#cgo').onclick = () => {
+    const text = $('#ct').value.trim(); if (!text) return toast('請填寫內容');
+    planAct('saveClientIns', { caseId: S.cur, id: x ? x.id : '', meetingId: mid || '', source: mid ? '會議' : segv('csrc'), date: $('#cd').value, text, impact: segv('cimp') === 'Y', amount: $('#ca').value.trim(), days: $('#cdy').value.trim() }, '已記錄');
+  };
+}
+/** 登記客戶確認：現場簽名（手指簽在畫面上）、LINE 回覆截圖、或其他方式 */
+function ciConfirm(x) {
+  if (guard()) return;
+  sheet(`<h3>登記客戶確認</h3><div class="s">${esc(x.text)}</div>
+    <label>客戶回覆</label><div class="seg" id="cst"><button data-v="已確認" class="on">確認</button><button data-v="客戶不同意">不同意</button></div>
+    <label>確認方式</label><div class="seg" id="cmt">${['現場簽名', 'LINE回覆', '其他'].map((o, i) => `<button data-v="${o}" class="${i === 0 ? 'on' : ''}">${o}</button>`).join('')}</div>
+    <div id="sbox"><label>請客戶簽名</label><canvas id="spad" class="spad"></canvas><div class="btns"><button class="btn ghost sm" id="sclr">重簽</button></div></div>
+    <div id="shbox" style="display:none"><label>客戶回覆截圖</label><input type="file" id="shf" accept="image/jpeg,image/png,image/heic,image/heif,image/webp"><div class="s" id="shs"></div></div>
+    <label>備註</label><input id="cn" placeholder="例如：客戶同意，但希望下週三前完成">
+    <div class="warnbox">登記後就會鎖定，不能再修改。</div>
+    <div class="btns"><button class="btn pri" id="cgo">登記</button></div>`);
+  const pad = $('#spad'), ctx = pad.getContext('2d'); let drawn = false, shot = '';
+  const fit = () => { const r = pad.getBoundingClientRect(); pad.width = r.width * 2; pad.height = r.height * 2; ctx.scale(2, 2); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.strokeStyle = '#1f1b18'; };
+  setTimeout(fit, 30);
+  let last = null;
+  const pos = e => { const r = pad.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return [t.clientX - r.left, t.clientY - r.top]; };
+  const start = e => { e.preventDefault(); last = pos(e); }, move = e => { if (!last) return; e.preventDefault(); const p = pos(e); ctx.beginPath(); ctx.moveTo(...last); ctx.lineTo(...p); ctx.stroke(); last = p; drawn = true; }, end = () => last = null;
+  pad.addEventListener('touchstart', start, { passive: false }); pad.addEventListener('touchmove', move, { passive: false }); pad.addEventListener('touchend', end);
+  pad.addEventListener('mousedown', start); pad.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+  $('#sclr').onclick = () => { ctx.clearRect(0, 0, pad.width, pad.height); drawn = false; };
+  const segv = id => document.querySelector(`#${id} .on`).dataset.v;
+  ['cst', 'cmt'].forEach(id => $$(`#${id} button`).forEach(b => b.onclick = () => { $$(`#${id} button`).forEach(o => o.classList.remove('on')); b.classList.add('on'); if (id === 'cmt') { $('#sbox').style.display = b.dataset.v === '現場簽名' ? 'block' : 'none'; $('#shbox').style.display = b.dataset.v === 'LINE回覆' ? 'block' : 'none'; if (b.dataset.v === '現場簽名') setTimeout(fit, 30); } }));
+  $('#shf').onchange = async () => { const f = $('#shf').files[0]; if (!f) return; $('#shs').textContent = '處理中…'; try { shot = await shrink(f, 1400); $('#shs').textContent = '已附上截圖'; } catch (e) { $('#shs').textContent = '無法讀取這張圖'; } };
+  $('#cgo').onclick = () => {
+    const method = segv('cmt');
+    if (method === '現場簽名' && !drawn) return toast('請客戶在框內簽名');
+    if (method === 'LINE回覆' && !shot) return toast('請附上截圖');
+    planAct('confirmClientIns', { id: x.id, status: segv('cst'), method, sign: method === '現場簽名' ? pad.toDataURL('image/png').split(',')[1] : '', shot: method === 'LINE回覆' ? shot : '', note: $('#cn').value.trim() }, '已登記客戶確認');
+  };
+}
+/** 產生文件 PDF 後提供分享／下載（客戶確認單、會議記錄、週報、工程履歷共用） */
+async function docShare(action, payload) {
+  if (guard()) return;
+  busy(true, '產生 PDF 中…（約 10～30 秒）');
+  let r;
+  try { r = await API(action, payload); } catch (e) { busy(false); return toast(e); }
+  busy(false);
+  const bytes = Uint8Array.from(atob(r.data), c => c.charCodeAt(0)), file = new File([bytes], r.name, { type: 'application/pdf' });
+  const url = URL.createObjectURL(file), can = navigator.canShare && navigator.canShare({ files: [file] });
+  sheet(`<h3>PDF 已產生</h3><div class="s">${esc(r.name)}<br>已存進案件雲端資料夾，並列在「文件」頁。</div>
+    <div class="btns" style="flex-direction:column">${can ? '<button class="btn pri" id="dsgo">傳送（LINE、Email…）</button>' : ''}
+      <a class="btn ${can ? 'ghost' : 'pri'}" href="${url}" download="${esc(r.name)}" style="text-align:center;text-decoration:none">下載 PDF</a>
+      <a class="btn ghost" href="${esc(r.url)}" target="_blank" rel="noopener" style="text-align:center;text-decoration:none">在雲端資料夾開啟</a></div>`);
+  if (can) $('#dsgo').onclick = async () => { try { await navigator.share({ files: [file], title: r.name }); closeSheet(); toast('已完成分享操作'); } catch (e) { if (e && e.name !== 'AbortError') toast('分享失敗，請改用下載'); } };
+  refreshCase().then(() => { if (S.tab !== 'log') render(); }).catch(() => { });
 }
 
 function vSoon() {

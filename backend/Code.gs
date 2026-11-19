@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v3.4（現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
+ * 浩森設計工作管理系統｜後端 v4.0（客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -7,6 +7,7 @@
 
 const SS_ID = '1Trazrz1jfOxTaPFA43hb9YFubU5uSaGUZAnD4sWXrCw';
 const PHOTO_DIR = '日誌照片_Images';
+const CONFIRM_DIR = '客戶確認_Images';  // 客戶簽名、LINE 回覆截圖
 const CASE_ROOT = '案件資料夾';        // 案件沒有指定雲端資料夾時，自動建在這裡
 const LOG_PDF_DIR = '工程日誌';        // 每個案件資料夾裡放日誌 PDF 的子資料夾
 const APP_URL = 'https://housen-design.github.io/housen-app/';  // 網站網址（PDF 取 Logo 用）
@@ -90,7 +91,7 @@ function run_(email, action, payload) {
     me = Object.assign(userById_(payload.as), { preview: true });
   }
   const READ = { home: getHome_, case: getCase_, thumbs: getThumbs_, pdfView: pdfView_ };   // 只讀，預覽模式也可用
-  const SLOW = { pdfLog: pdfLog_ };   // 產生 PDF 較久，不鎖住其他人
+  const SLOW = { pdfLog: pdfLog_, clientPdf: clientPdf_ };   // 產生 PDF 較久，不鎖住其他人
   const WRITE = {
     saveLog: saveLog_, updateLog: updateLog_, deletePhoto: deletePhoto_,
     submitLog: submitLog_, confirmLog: confirmLog_, signLog: signLog_, returnLog: returnLog_,
@@ -98,7 +99,8 @@ function run_(email, action, payload) {
     saveIns: saveIns_, actIns: actIns_, saveTodo: saveTodo_, setTodo: setTodo_,
     saveCase: saveCase_, saveCaseInfo: saveCaseInfo_, setStage: setStage_, saveTrade: saveTrade_,
     savePlanItem: savePlanItem_, cancelPlanItem: cancelPlanItem_, applyTemplate: applyTemplate_, lockPlan: lockPlan_,
-    setActualStart: setActualStart_, setDone: setDone_
+    setActualStart: setActualStart_, setDone: setDone_,
+    saveMeeting: saveMeeting_, reviewMeeting: reviewMeeting_, saveClientIns: saveClientIns_, confirmClientIns: confirmClientIns_
   };
   if (READ[action]) return READ[action](me, payload);
   if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); return SLOW[action](me, payload); }
@@ -378,15 +380,25 @@ function getCase_(me, p) {
   const planLog = tryTable_('進度異動紀錄').filter(r => r['案件ID'] === p.id).map(r => ({
     item: r['工序ID'], what: r['項目'], from: r['原值'], to: r['新值'], why: r['原因'], by: r['修改人'], at: r['時間']
   })).reverse();
-  return { info: c, canEdit: canEditCase_(me, c), canPlan: canPlan_(me, c), logs, ins, todos, plan, planLog,
+  const meetings = tryTable_('會議').filter(m => m['案件ID'] === p.id).map(m => ({
+    id: m['會議ID'], date: m['日期'], name: m['會議名稱'], attendees: m['出席人'], audio: m['錄音檔'], summary: m['AI摘要'],
+    reviewedBy: m['核對人'], reviewedAt: m['核對時間'], by: m['記錄人'], pdfAt: m['PDF時間']
+  })).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const cins = tryTable_('客戶指示').filter(x => x['案件ID'] === p.id).map(x => ({
+    id: x['指示ID'], meetingId: x['會議ID'], type: x['類型'], source: x['來源'], date: x['日期'], text: x['內容'],
+    impact: x['影響費用或工期'] === 'Y', amount: x['追加減金額'], days: x['影響工期天數'], status: x['確認狀態'] || '待確認',
+    method: x['確認方式'], sign: x['客戶簽名'], shot: x['確認截圖'], confirmedAt: x['確認時間'], note: x['確認備註'],
+    by: x['記錄人'], created: x['建立時間'], locked: x['鎖定'] === 'Y'
+  })).sort((a, b) => ((b.date || '') + b.created).localeCompare((a.date || '') + a.created));
+  return { info: c, canEdit: canEditCase_(me, c), canPlan: canPlan_(me, c), logs, ins, todos, plan, planLog, meetings, cins,
     planLocked: c['進度定案時間'] || '', planLockedBy: c['進度定案人'] || '' };
 }
 
 function getThumbs_(me, p) {
-  const dir = photoDir_(), out = {};
+  const out = {};
   (p.paths || []).forEach(path => {
     try {
-      const it = dir.getFilesByName(String(path).split('/').pop());
+      const it = dirFor_(path).getFilesByName(String(path).split('/').pop());
       if (!it.hasNext()) return;
       const f = it.next(), blob = f.getThumbnail() || f.getBlob();
       out[path] = { src: 'data:image/jpeg;base64,' + Utilities.base64Encode(blob.getBytes()), url: f.getUrl() };
@@ -395,13 +407,16 @@ function getThumbs_(me, p) {
   return out;
 }
 
-let _photoDir;
-function photoDir_() {
-  if (_photoDir) return _photoDir;
+const _dirs = {};
+/** 試算表所在資料夾下的子資料夾（沒有就建立），例如 日誌照片_Images、客戶確認_Images */
+function subDir_(name) {
+  if (_dirs[name]) return _dirs[name];
   const parent = DriveApp.getFileById(SS_ID).getParents().next();
-  const it = parent.getFoldersByName(PHOTO_DIR);
-  return (_photoDir = it.hasNext() ? it.next() : parent.createFolder(PHOTO_DIR));
+  const it = parent.getFoldersByName(name);
+  return (_dirs[name] = it.hasNext() ? it.next() : parent.createFolder(name));
 }
+function photoDir_() { return subDir_(PHOTO_DIR); }
+function dirFor_(path) { const d = String(path).split('/')[0]; return d === CONFIRM_DIR ? subDir_(CONFIRM_DIR) : photoDir_(); }
 
 /* ========== 寫入：日誌 ========== */
 
@@ -581,8 +596,8 @@ function logoData_() {
 }
 function photoData_(path) {
   try {
-    const it = photoDir_().getFilesByName(String(path).split('/').pop());
-    if (it.hasNext()) return 'data:image/jpeg;base64,' + Utilities.base64Encode(it.next().getBlob().getBytes());
+    const it = dirFor_(path).getFilesByName(String(path).split('/').pop());
+    if (it.hasNext()) { const b = it.next().getBlob(); return 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes()); }
   } catch (e) { }
   return '';
 }
@@ -905,6 +920,155 @@ function setDone_(me, d) {
   updateRow_('進度計畫', '工序ID', d.id, { '實際完成': date, '實際完成確認人': me.id, '最後修改人': me.id, '最後修改時間': now_() });
   planLog_(me, r['案件ID'], d.id, r['實際完成'] ? '更正施工完成' : '施工完成', r['實際完成'], date, why);
   return true;
+}
+
+/* ========== 客戶頁：客戶指示、會議記錄、客戶確認、追加減 ==========
+ * 暫定規則（可調）：任何同事都能記錄；確認前由記錄人、負責設計師、主管修改；
+ * 客戶確認後「鎖定」不可再改，要更正就另記一筆。追加減金額目前案件成員都看得到（待 Boss 確認）。
+ */
+const CI_SOURCES = ['LINE', '口頭', '電話', '會議', '其他'];
+const CI_STATUS = ['待確認', '已確認', '客戶不同意'];
+function canCI_(me, c, rec) { return me.leader || (c && c['負責設計師'] === me.id) || (rec && rec['記錄人'] === me.id); }
+
+function saveMeeting_(me, d) {
+  const c = caseRow_(d.caseId);
+  if (!c) throw new Error('找不到案件');
+  if (!String(d.name || '').trim()) throw new Error('請填寫會議名稱');
+  const row = { '日期': ymd_(d.date) || today_(), '會議名稱': String(d.name).trim(), '出席人': d.attendees || '', '錄音檔': d.audio || '', 'AI摘要': d.summary || '' };
+  if (!d.id) {
+    const id = uid_();
+    appendRow_('會議', Object.assign({ '會議ID': id, '案件ID': d.caseId, '記錄人': me.id, '建立時間': now_() }, row));
+    return id;
+  }
+  const m = rowObj_(findRow_('會議', '會議ID', d.id));
+  if (!canCI_(me, c, m)) throw new Error('只有記錄人、負責設計師或主管可以修改');
+  row['核對人'] = ''; row['核對時間'] = '';   // 內容改了要重新核對
+  updateRow_('會議', '會議ID', d.id, row);
+  return d.id;
+}
+
+/** 設計師核對會議摘要（AI 整理的內容要人確認過） */
+function reviewMeeting_(me, d) {
+  const m = rowObj_(findRow_('會議', '會議ID', d.id)), c = caseRow_(m['案件ID']);
+  if (!canCI_(me, c, null)) throw new Error('只有負責設計師或主管可以核對');
+  updateRow_('會議', '會議ID', d.id, { '核對人': me.id, '核對時間': now_() });
+  return true;
+}
+
+function saveClientIns_(me, d) {
+  const c = caseRow_(d.caseId);
+  if (!c) throw new Error('找不到案件');
+  const text = String(d.text || '').trim();
+  if (!text) throw new Error('請填寫客戶指示內容');
+  const impact = d.impact ? 'Y' : 'N';
+  const row = {
+    '會議ID': d.meetingId || '', '類型': d.meetingId ? '會議性' : '臨時性', '來源': d.meetingId ? '會議' : (CI_SOURCES.indexOf(d.source) >= 0 ? d.source : '其他'),
+    '日期': ymd_(d.date) || today_(), '內容': text, '影響費用或工期': impact,
+    '追加減金額': impact === 'Y' ? String(d.amount || '').replace(/[^0-9.\-]/g, '') : '', '影響工期天數': impact === 'Y' ? String(d.days || '').replace(/[^0-9\-]/g, '') : ''
+  };
+  if (!d.id) {
+    const id = uid_();
+    appendRow_('客戶指示', Object.assign({ '指示ID': id, '案件ID': d.caseId, '確認狀態': '待確認', '記錄人': me.id, '建立時間': now_() }, row));
+    return id;
+  }
+  const x = rowObj_(findRow_('客戶指示', '指示ID', d.id));
+  if (x['鎖定'] === 'Y') throw new Error('客戶已確認，不能修改；要更正請另記一筆');
+  if (!canCI_(me, c, x)) throw new Error('只有記錄人、負責設計師或主管可以修改');
+  updateRow_('客戶指示', '指示ID', d.id, Object.assign(row, { '最後修改人': me.id, '最後修改時間': now_() }));
+  return d.id;
+}
+
+function saveImage_(b64, ext, prefix) {
+  if (!b64) return '';
+  const name = prefix + '.' + uid_() + '.' + fmt_(new Date(), 'HHmmss') + '.' + ext;
+  subDir_(CONFIRM_DIR).createFile(Utilities.newBlob(Utilities.base64Decode(b64), ext === 'png' ? 'image/png' : 'image/jpeg', name));
+  return CONFIRM_DIR + '/' + name;
+}
+
+/** 記錄客戶確認：現場簽名、LINE 回覆截圖或其他方式；確認後鎖定 */
+function confirmClientIns_(me, d) {
+  const x = rowObj_(findRow_('客戶指示', '指示ID', d.id)), c = caseRow_(x['案件ID']);
+  if (x['鎖定'] === 'Y') throw new Error('這筆已經確認過');
+  if (!canCI_(me, c, x)) throw new Error('只有記錄人、負責設計師或主管可以登記客戶確認');
+  const status = CI_STATUS.indexOf(d.status) > 0 ? d.status : '已確認';
+  if (!d.method) throw new Error('請選擇確認方式');
+  if (d.method === '現場簽名' && !d.sign) throw new Error('請請客戶簽名');
+  if (d.method === 'LINE回覆' && !d.shot) throw new Error('請附上客戶回覆的截圖');
+  updateRow_('客戶指示', '指示ID', d.id, {
+    '確認狀態': status, '確認方式': d.method, '客戶簽名': saveImage_(d.sign, 'png', '簽名'), '確認截圖': saveImage_(d.shot, 'jpg', '截圖'),
+    '確認時間': now_(), '確認備註': d.note || '', '鎖定': 'Y', '最後修改人': me.id, '最後修改時間': now_()
+  });
+  return true;
+}
+
+/* ========== 共用：產生文件 PDF 並登記到「文件紀錄」 ========== */
+function docHtml_(title, sub, body) {
+  const logo = logoData_();
+  return '<html><head><meta charset="utf-8"><style>'
+    + 'body{font-family:"Noto Sans TC","Noto Sans CJK TC","Microsoft JhengHei",sans-serif;color:#2b2724;font-size:10.5pt;line-height:1.6}'
+    + '.hd{width:100%;border-bottom:1.5pt solid #AF9263;padding-bottom:6pt}.hd td{vertical-align:bottom}'
+    + '.tt{font-size:18pt;letter-spacing:3pt;font-weight:bold;text-align:right}.ts{font-size:9pt;color:#8a7f75;text-align:right}'
+    + 'table.info{width:100%;border-collapse:collapse;margin-top:12pt}table.info td{border:0.6pt solid #e2d9cc;padding:4pt 7pt;font-size:10pt}table.info td.k{background:#f7f4ef;width:80pt;color:#7a7067}'
+    + 'h2{font-size:11.5pt;margin:16pt 0 6pt;padding-left:6pt;border-left:3pt solid #AF9263}h3{font-size:10.5pt;margin:12pt 0 4pt}'
+    + '.txt{white-space:pre-wrap}.issue{background:#f9ece9;color:#8a2f25;padding:6pt 9pt;white-space:pre-wrap}'
+    + '.item{border:0.6pt solid #e2d9cc;padding:6pt 9pt;margin-bottom:6pt}.im{font-size:9pt;color:#7a7067}.st{font-size:9pt;color:#5b6f8c}'
+    + 'table.grid{width:100%;border-collapse:collapse}table.grid td,table.grid th{border:0.6pt solid #e2d9cc;padding:3pt 6pt;font-size:9.5pt;text-align:left}table.grid th{background:#f7f4ef;font-weight:normal;color:#7a7067}'
+    + 'table.ph td{width:50%;vertical-align:top;padding:4pt}.pn{font-size:9pt;color:#5a5048}'
+    + '.sign{border:0.6pt solid #e2d9cc;padding:6pt;margin-top:6pt}.foot{margin-top:22pt;border-top:0.6pt solid #e2d9cc;padding-top:5pt;font-size:8.5pt;color:#8a7f75}.pb{page-break-before:always}'
+    + '</style></head><body>'
+    + '<table class="hd"><tr><td>' + (logo ? '<img src="' + logo + '" height="62">' : '<b>浩森設計 HOUSEN</b>') + '</td>'
+    + '<td><div class="tt">' + h_(title) + '</div><div class="ts">' + h_(sub) + '</div></td></tr></table>'
+    + body
+    + '<div class="foot">產生時間 ' + fmt_(new Date(), 'yyyy/MM/dd HH:mm') + '<br>浩森設計 HOUSEN INTERIOR DESIGN</div></body></html>';
+}
+/** 存到「案件資料夾／子資料夾」，同一來源重新產生時覆蓋舊檔，並更新文件紀錄 */
+function saveDoc_(me, c, sub, name, html, type, srcId) {
+  const blob = Utilities.newBlob(html, 'text/html', 'doc.html').getAs('application/pdf').setName(name);
+  const d = caseDir_(c), it = d.getFoldersByName(sub), dir = it.hasNext() ? it.next() : d.createFolder(sub);
+  const docs = tryTable_('文件紀錄'), old = srcId ? docs.find(x => x['來源ID'] === srcId && x['文件類型'] === type) : null;
+  if (old && old['檔案ID']) { try { DriveApp.getFileById(old['檔案ID']).setTrashed(true); } catch (e) { } }
+  const file = dir.createFile(blob);
+  const row = { '日期': today_(), '文件名稱': name, '檔案連結': file.getUrl(), '檔案ID': file.getId(), '產生人': me.id, '產生時間': now_() };
+  if (old) updateRow_('文件紀錄', '文件ID', old['文件ID'], row);
+  else appendRow_('文件紀錄', Object.assign({ '文件ID': uid_(), '案件ID': c['案件ID'], '文件類型': type, '對內對外': '對外', '來源ID': srcId || '' }, row));
+  return file;
+}
+function pdfOut_(file) { return { name: file.getName(), data: Utilities.base64Encode(file.getBlob().getBytes()), url: file.getUrl() }; }
+
+function ciBlock_(x) {
+  const imp = x['影響費用或工期'] === 'Y'
+    ? '<div class="im">影響費用或工期：' + (x['追加減金額'] ? '追加減 ' + h_(x['追加減金額']) + ' 元' : '') + (x['影響工期天數'] ? '　工期 ' + h_(x['影響工期天數']) + ' 天' : '') + '</div>' : '';
+  const conf = x['鎖定'] === 'Y'
+    ? '<div class="st">' + h_(x['確認狀態']) + '（' + h_(x['確認方式']) + '，' + h_(String(x['確認時間']).slice(0, 16)) + '）' + (x['確認備註'] ? '：' + h_(x['確認備註']) : '') + '</div>'
+      + (x['客戶簽名'] ? '<div class="sign">客戶簽名<br><img src="' + photoData_(x['客戶簽名']) + '" height="70"></div>' : '')
+    : '<div class="st">待客戶確認</div>';
+  return '<div class="item"><div class="im">' + h_(x['日期']) + '・' + h_(x['來源']) + '・記錄人 ' + h_(pname_(x['記錄人'])) + '</div><div class="txt">' + h_(x['內容']) + '</div>' + imp + conf + '</div>';
+}
+
+/** 客戶確認單／會議記錄 PDF（d.meetingId 或 d.insId） */
+function clientPdf_(me, d) {
+  const all = tryTable_('客戶指示');
+  let c, html, name, src, type;
+  if (d.meetingId) {
+    const m = rowObj_(findRow_('會議', '會議ID', d.meetingId)); c = caseRow_(m['案件ID']);
+    const items = all.filter(x => x['會議ID'] === d.meetingId);
+    html = docHtml_('會議記錄', c['案件名稱'] + '　' + m['日期'],
+      '<table class="info"><tr><td class="k">案件</td><td>' + h_(c['案件名稱']) + '</td></tr><tr><td class="k">日期</td><td>' + h_(m['日期']) + '</td></tr><tr><td class="k">會議</td><td>' + h_(m['會議名稱']) + '</td></tr>'
+      + (m['出席人'] ? '<tr><td class="k">出席</td><td>' + h_(m['出席人']) + '</td></tr>' : '') + '</table>'
+      + (m['AI摘要'] ? '<h2>重點摘要</h2><div class="txt">' + h_(m['AI摘要']) + '</div>' + (m['核對人'] ? '<div class="im">已由 ' + h_(pname_(m['核對人'])) + ' 核對</div>' : '<div class="im">摘要尚未核對</div>') : '')
+      + '<h2>決議與客戶指示（' + items.length + ' 項）</h2>' + (items.map(ciBlock_).join('') || '<div class="im">無</div>')
+      + '<h2>客戶確認</h2><div class="txt">以上內容如無誤，請回覆「確認」；如有不同意見，請直接說明。</div>');
+    name = '會議記錄_' + c['案件名稱'] + '_' + String(m['日期']).replace(/\//g, '-') + '.pdf'; src = d.meetingId; type = '會議記錄';
+    updateRow_('會議', '會議ID', d.meetingId, { 'PDF時間': now_() });
+  } else {
+    const x = rowObj_(findRow_('客戶指示', '指示ID', d.insId)); c = caseRow_(x['案件ID']);
+    html = docHtml_('客戶指示確認單', c['案件名稱'] + '　' + x['日期'],
+      '<table class="info"><tr><td class="k">案件</td><td>' + h_(c['案件名稱']) + '</td></tr><tr><td class="k">施工地點</td><td>' + h_(c['地址']) + '</td></tr></table>'
+      + '<h2>客戶指示內容</h2>' + ciBlock_(x) + '<h2>客戶確認</h2><div class="txt">以上內容如無誤，請回覆「確認」；如有不同意見，請直接說明。</div>');
+    name = '客戶確認單_' + c['案件名稱'] + '_' + String(x['日期']).replace(/\//g, '-') + '_' + d.insId.slice(0, 4) + '.pdf'; src = d.insId; type = '客戶確認單';
+  }
+  if (!canCI_(me, c, null) && !me.leader) throw new Error('只有負責設計師或主管可以產生');
+  return pdfOut_(saveDoc_(me, c, '客戶確認', name, html, type, src));
 }
 
 /** 第一次安裝或新增權限時，在編輯器選這個函式按「執行」完成授權 */
