@@ -367,6 +367,7 @@ function overviewHTML(h) {
         ${c.last.photos.length ? `<div class="ovph">${c.last.photos.map(x => `<span data-thumb="${esc(x)}">${S.thumbs[x] ? `<img src="${S.thumbs[x].src}">` : ''}</span>`).join('')}${c.last.nPhotos > 3 ? `<em>+${c.last.nPhotos - 3}</em>` : ''}</div>` : ''}` : ''}
       ${c.issue ? `<div class="issue">⚠ ${esc(md(c.issue.date))}：${esc(c.issue.text)}</div>` : ''}
       <div class="mini">
+        ${c.missing ? `<span class="bad">近 14 天漏填 ${c.missing} 天</span>` : ''}
         <span class="${c.insLate ? 'bad' : ''}">指示待處理 ${c.insOpen}${c.insLate ? `（逾期 ${c.insLate}）` : ''}</span>
         ${c.insWait ? `<span>已回報待確認 ${c.insWait}</span>` : ''}
         ${p ? `<span>工序完成 ${p.done}/${p.total}</span>${late ? `<span class="bad">與計畫差異 ${late} 項</span>` : ''}` : '<span>未排進度計畫</span>'}
@@ -401,6 +402,8 @@ function pvOverflow() {
 }
 window.addEventListener('resize', () => pvOverflow());
 function itemHTML(i) {
+  if (i.kind === 'miss') return `<div class="todo" data-miss="${i.caseId}|${i.date}"><div class="ck lg">誌</div>
+    <div style="flex:1"><div class="tt">日誌未填：${esc(i.caseName)} ${esc(md(i.date))}（${'日一二三四五六'[new Date(i.date.replace(/\//g, '-')).getDay()]}）</div><div class="s">補寫日誌，或登記當天無施工</div></div>${chip('漏填', 'c-bad')}</div>`;
   if (i.kind === 'ms' || i.kind === 'plan') {
     const late = i.kind === 'plan' || (i.due && days(i.due, S.home.today) < 0);
     return `<div class="todo" data-goprog="${i.caseId}|${i.kind}"><div class="ck lg">${i.kind === 'ms' ? '程' : '工'}</div>
@@ -419,9 +422,22 @@ function itemHTML(i) {
     return `<div class="todo ${i.done ? 'done' : ''}" data-todo="${i.id}" data-done="${i.done ? 1 : 0}"><div class="ck">${i.done ? '✓' : ''}</div>
       <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[i.caseName ? esc(i.caseName) : '', dueTxt(i.due, i.done), i.from && i.from !== ME().id ? esc(short(pname(i.from))) + ' 交辦' : ''].filter(String).join('・')}</div></div></div>`;
   }
-  const waitMe = i.status === '已回報' && !i.mine;
+  const waitMe = i.status === '已回報' && !i.mine, stale = i.staleDays >= ((S.home.rule && S.home.rule.stale) || 3);
   return `<div class="todo" data-goins="${i.caseId}"><div class="ck ins">指</div>
-    <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[esc(i.caseName), waitMe ? esc(short(pname(i.to))) + ' 已回報，等你確認' : (i.status === '已回報' ? '已回報，等主管確認' : dueTxt(i.due)), !waitMe ? esc(short(pname(i.from))) + ' 指示' : ''].filter(String).join('・')}</div></div>${chip(waitMe ? '待你確認' : i.status, INS_CLS[i.status])}</div>`;
+    <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[esc(i.caseName), waitMe ? esc(short(pname(i.to))) + ' 已回報，等你確認' : (i.status === '已回報' ? '已回報，等主管確認' : stale ? `<span class="bad">已 ${i.staleDays} 天未回報</span>` : dueTxt(i.due)), !waitMe ? esc(short(pname(i.from))) + ' 指示' : ''].filter(String).join('・')}</div></div>${chip(waitMe ? '待你確認' : i.status, INS_CLS[i.status])}</div>`;
+}
+function missSheet(caseId, date) {
+  const c = S.home.cases.find(x => x.id === caseId) || {};
+  sheet(`<h3>${esc(c.name || '')} ${esc(md(date))} 日誌未填</h3><div class="s">依目前規則（暫定）：施工中的案件，週${esc((S.home.rule && S.home.rule.days || []).join('、'))}每天要有一篇已送出的日誌，隔天 ${esc(S.home.rule ? S.home.rule.cut : '10:00')} 前完成。</div>
+    <div class="btns" style="flex-direction:column"><button class="btn pri" id="mwrite">補寫這天的日誌</button></div>
+    <label>或登記當天無施工</label><input id="mwhy" placeholder="例如：等系統櫃進場、客戶要求暫停">
+    <div class="btns"><button class="btn ghost" id="mnone">登記無施工</button></div>`);
+  $('#mwrite').onclick = async () => { closeSheet(); await openCase(caseId, 'log'); logForm(null, date); };
+  $('#mnone').onclick = async () => {
+    const why = $('#mwhy').value.trim(); if (!why) return toast('請寫原因');
+    busy(true, '登記中…');
+    try { await API('markNoWork', { caseId, date, reason: why }); await reloadHome(); closeSheet(); renderHome(); toast('已登記無施工'); } catch (e) { toast(e); } finally { busy(false); }
+  };
 }
 function bindItems() {
   if (preview()) $$('[data-todo]').forEach(e => e.classList.add('ro'));
@@ -434,6 +450,7 @@ function bindItems() {
   });
   $$('[data-goins]').forEach(e => e.onclick = () => openCase(e.dataset.goins, 'instr'));
   $$('[data-golog]').forEach(e => e.onclick = () => { const [c, l] = e.dataset.golog.split('|'); openCase(c, 'log', l); });
+  $$('[data-miss]').forEach(e => e.onclick = () => { if (preview()) return; const [c, dd] = e.dataset.miss.split('|'); missSheet(c, dd); });
   $$('[data-goprog]').forEach(e => e.onclick = () => { const [c, k] = e.dataset.goprog.split('|'); S.ptab = k === 'ms' ? 'ms' : 'plan'; openCase(c, 'prog'); });
 }
 
@@ -1123,9 +1140,9 @@ function vSoon() {
 }
 
 let NL = null;
-function logForm(log) {
+function logForm(log, forDate) {
   if (guard()) return;
-  const d = new Date(), today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const d = new Date(), today = forDate ? toInput(forDate) : d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   NL = { id: log ? log.id : null, trades: log ? log.trades.slice() : [], photos: [], old: log ? log.photos.slice() : [] };
   const names = S.home.trades.map(t => t.name), extra = NL.trades.filter(t => !names.includes(t));
   const draft = !log || log.status === '草稿';

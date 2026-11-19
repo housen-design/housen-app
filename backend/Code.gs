@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v4.2（文件頁：週報、工程履歷；查驗紀錄、SOP、里程碑；客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
+ * 浩森設計工作管理系統｜後端 v4.3（日誌漏填追蹤；文件頁：週報、工程履歷；查驗紀錄、SOP、里程碑；客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -101,7 +101,7 @@ function run_(email, action, payload) {
     savePlanItem: savePlanItem_, cancelPlanItem: cancelPlanItem_, applyTemplate: applyTemplate_, lockPlan: lockPlan_,
     setActualStart: setActualStart_, setDone: setDone_,
     saveMeeting: saveMeeting_, reviewMeeting: reviewMeeting_, saveClientIns: saveClientIns_, confirmClientIns: confirmClientIns_,
-    saveCheck: saveCheck_, applySop: applySop_, setSop: setSop_, applyMilestones: applyMilestones_, saveMilestone: saveMilestone_, setMilestone: setMilestone_
+    markNoWork: markNoWork_, saveCheck: saveCheck_, applySop: applySop_, setSop: setSop_, applyMilestones: applyMilestones_, saveMilestone: saveMilestone_, setMilestone: setMilestone_
   };
   if (READ[action]) return READ[action](me, payload);
   if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); return SLOW[action](me, payload); }
@@ -308,6 +308,12 @@ function getHome_(me) {
     if (st === LS.SIGNED && designer === me.id && !(+l['分享次數'])) add('send');
     if (st === LS.SIGNED && l['小修待看'] === 'Y' && signer === me.id) add('minor');
   });
+  // 日誌漏填：提醒負責設計師（最近 5 天）
+  const rule = logRule_(), exempt = tryTable_('日誌豁免');
+  const missMap = {};
+  caseRows.forEach(c => { const m = missingDays_(c, logs, exempt, rule); missMap[c['案件ID']] = m;
+    if (c['負責設計師'] === me.id) m.slice(0, 5).forEach(dd => items.push({ kind: 'miss', id: c['案件ID'] + ':' + dd, caseId: c['案件ID'], caseName: c['案件名稱'], date: dd, status: 'miss', created: dd })); });
+  items.forEach(i => { if (i.kind === 'ins' && i.status === IS.TODO && !i.due && i.created) i.staleDays = Math.floor((Date.now() - new Date(String(i.created).replace(/\//g, '-').replace(' ', 'T') + '+08:00').getTime()) / 864e5); });
   // 設計階段里程碑：交給我、未完成的（期限 7 天內或已逾期）
   const soon = fmt_(new Date(Date.now() + 7 * 864e5), 'yyyy/MM/dd');
   tryTable_('里程碑').filter(x => x['負責人'] === me.id && x['狀態'] !== '已完成' && x['目前期限'] && x['目前期限'] <= soon).forEach(x => items.push({
@@ -338,6 +344,7 @@ function getHome_(me) {
         last: last ? { id: last['日誌ID'], date: last['日期'], by: last['填寫人'], text: String(last['今日狀況'] || '').slice(0, 90), status: logStatus_(last), photos: lp.slice(0, 3).map(x => x['照片']), nPhotos: lp.length } : null,
         logs7: cl.filter(l => l['日期'] >= fmt_(new Date(Date.now() - 7 * 864e5), 'yyyy/MM/dd')).length,
         issue: issue ? { id: issue['日誌ID'], date: issue['日期'], text: String(issue['發現問題']).slice(0, 90) } : null,
+        missing: (missMap[cid] || []).length,
         insOpen: ci.filter(i => i['狀態'] === IS.TODO).length,
         insLate: ci.filter(i => i['狀態'] === IS.TODO && i['期限'] && i['期限'] < t).length,
         insWait: ci.filter(i => i['狀態'] === IS.REPLIED).length,
@@ -353,7 +360,7 @@ function getHome_(me) {
       created: i['建立時間'], late: !!i['期限'] && i['期限'] < t
     })).sort((a, b) => a.created.localeCompare(b.created));
   }
-  return { me, people, trades, cases, items, overview, tracking, today: today_(), now: fmt_(new Date(), 'yyyy/MM/dd HH:mm'), testMode: TEST_MODE };
+  return { me, people, trades, cases, items, overview, tracking, rule: rule, today: today_(), now: fmt_(new Date(), 'yyyy/MM/dd HH:mm'), testMode: TEST_MODE };
 }
 
 function getCase_(me, p) {
@@ -1039,6 +1046,47 @@ function settings_() {
   return (_settings = o);
 }
 function setting_(k, dflt) { const v = settings_()[k]; return v === undefined || v === '' ? dflt : v; }
+
+/* ========== 日誌填寫規則與漏填追蹤（暫定，參數在「公司設定」可調） ==========
+ * 施工階段的案件，在「日誌填寫日」每天要有一篇已送出的日誌（草稿不算）；當天沒施工就登記「無施工」。
+ * 截止：隔天「日誌截止時間」；過了還沒有就算漏填，提醒負責設計師，Boss 總覽看得到。只追蹤最近 14 天。
+ */
+const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+function logRule_() {
+  return {
+    days: String(setting_('日誌填寫日', '一,二,三,四,五,六')).split(/[,，、\s]+/).filter(String),
+    cut: String(setting_('日誌截止時間', '10:00')),
+    since: String(setting_('日誌追蹤起始日', '')),
+    stale: +setting_('指示未回報提醒天數', 3) || 3
+  };
+}
+/** 回傳案件漏填的日期（新到舊） */
+function missingDays_(c, logs, exempt, rule) {
+  if (c['階段'] !== '施工' || c['狀態'] === '已結案') return [];
+  const now = new Date(), nowHM = fmt_(now, 'HH:mm'), out = [];
+  const start = [c['預計開工日'], rule.since].filter(String).sort().pop() || '';
+  for (let k = 1; k <= 14; k++) {
+    const day = new Date(now.getTime() - k * 864e5), ymd = fmt_(day, 'yyyy/MM/dd');
+    if (start && ymd < start) break;
+    if (k === 1 && nowHM < rule.cut) continue;   // 昨天的日誌還沒到截止時間
+    if (rule.days.indexOf(WEEK[+fmt_(day, 'u') % 7]) < 0) continue;
+    if (logs.some(l => l['案件ID'] === c['案件ID'] && l['日期'] === ymd && logStatus_(l) !== LS.DRAFT)) continue;
+    if (exempt.some(x => x['案件ID'] === c['案件ID'] && x['日期'] === ymd)) continue;
+    out.push(ymd);
+  }
+  return out;
+}
+/** 登記某天無施工（任何同事都可以登記，記錄是誰） */
+function markNoWork_(me, d) {
+  const c = caseRow_(d.caseId);
+  if (!c) throw new Error('找不到案件');
+  const day = ymd_(d.date), why = String(d.reason || '').trim();
+  if (!day) throw new Error('請選擇日期');
+  if (!why) throw new Error('請寫原因，例如：等系統櫃進場');
+  if (tryTable_('日誌豁免').some(x => x['案件ID'] === d.caseId && x['日期'] === day)) return true;
+  appendRow_('日誌豁免', { 'ID': uid_(), '案件ID': d.caseId, '日期': day, '原因': why, '記錄人': me.id, '時間': now_() });
+  return true;
+}
 
 /* ========== 進度頁補完：查驗紀錄、開案前 SOP、設計階段里程碑 ==========
  * 依 Boss 11/19 方向：查驗是「記錄與提醒」，不擋施工、不需主管逐項放行；有問題就照常下指示處理。
