@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v3.2（案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
+ * 浩森設計工作管理系統｜後端 v3.3（進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -96,7 +96,9 @@ function run_(email, action, payload) {
     submitLog: submitLog_, confirmLog: confirmLog_, signLog: signLog_, returnLog: returnLog_,
     escalateLog: escalateLog_, seenLog: seenLog_, shareLog: shareLog_,
     saveIns: saveIns_, actIns: actIns_, saveTodo: saveTodo_, setTodo: setTodo_,
-    saveCase: saveCase_, saveCaseInfo: saveCaseInfo_, setStage: setStage_, saveTrade: saveTrade_
+    saveCase: saveCase_, saveCaseInfo: saveCaseInfo_, setStage: setStage_, saveTrade: saveTrade_,
+    savePlanItem: savePlanItem_, cancelPlanItem: cancelPlanItem_, applyTemplate: applyTemplate_, lockPlan: lockPlan_,
+    setActualStart: setActualStart_, setDone: setDone_
   };
   if (READ[action]) return READ[action](me, payload);
   if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); return SLOW[action](me, payload); }
@@ -123,6 +125,29 @@ function readTable_(name) {
     head.forEach((h, i) => { if (h) o[h] = r[i]; });
     return o;
   });
+}
+
+function tryTable_(name) { return ss_().getSheetByName(name) ? readTable_(name) : []; }
+
+/** 發布前在編輯器執行：檢查新版需要的資料表與欄位是否都已建立 */
+function checkSchema() {
+  const need = {
+    '工程日誌': ['日誌狀態', '簽核人', '簽核期限', '簽核內容', 'PDF檔ID', '分享次數', '下載次數', '最後下載人', '最後下載時間'],
+    '日誌照片': ['刪除時間', '刪除人'],
+    '案件': ['最後修改時間', '最後修改人', '進度定案時間', '進度定案人'],
+    '進度計畫': ['工序ID', '案件ID', '順序', '工種', '工序名稱', '原計畫開始', '原計畫完成', '目前計畫開始', '目前計畫完成', '實際開始', '實際完成', '查驗點', '改期原因',
+      '狀態', '實際開始確認人', '實際完成確認人', '範本工序ID', '最後修改人', '最後修改時間'],
+    '進度異動紀錄': ['紀錄ID', '案件ID', '工序ID', '項目', '原值', '新值', '原因', '修改人', '時間']
+  };
+  const miss = [];
+  Object.keys(need).forEach(n => {
+    const sh = ss_().getSheetByName(n);
+    if (!sh) { miss.push('缺資料表：' + n); return; }
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    need[n].forEach(h => { if (head.indexOf(h) < 0) miss.push(n + ' 缺欄位：' + h); });
+  });
+  Logger.log(miss.length ? miss.join('\n') : '欄位齊全，可以部署');
+  return miss;
 }
 
 function appendRow_(name, obj) {
@@ -313,7 +338,17 @@ function getCase_(me, p) {
   const todos = readTable_('待辦').filter(t => t['案件ID'] === p.id).map(t => ({
     id: t['待辦ID'], text: t['內容'], to: t['負責人'], due: t['期限'], done: t['狀態'] === '已完成', from: t['建立人']
   }));
-  return { info: c, canEdit: canEditCase_(me, c), logs, ins, todos };
+  const plan = readTable_('進度計畫').filter(r => r['案件ID'] === p.id).map(r => ({
+    id: r['工序ID'], order: +r['順序'] || 0, trade: r['工種'], name: r['工序名稱'],
+    baseStart: r['原計畫開始'], baseEnd: r['原計畫完成'], start: r['目前計畫開始'], end: r['目前計畫完成'],
+    actStart: r['實際開始'], actStartBy: r['實際開始確認人'], actEnd: r['實際完成'], actEndBy: r['實際完成確認人'],
+    check: r['查驗點'], cancelled: r['狀態'] === '取消', tpl: r['範本工序ID']
+  })).sort((a, b) => a.order - b.order);
+  const planLog = tryTable_('進度異動紀錄').filter(r => r['案件ID'] === p.id).map(r => ({
+    item: r['工序ID'], what: r['項目'], from: r['原值'], to: r['新值'], why: r['原因'], by: r['修改人'], at: r['時間']
+  })).reverse();
+  return { info: c, canEdit: canEditCase_(me, c), canPlan: canPlan_(me, c), logs, ins, todos, plan, planLog,
+    planLocked: c['進度定案時間'] || '', planLockedBy: c['進度定案人'] || '' };
 }
 
 function getThumbs_(me, p) {
@@ -691,6 +726,153 @@ function saveTrade_(me, d) {
   if (list.some(t => t['工種'] === name)) throw new Error('工種已存在');
   const max = list.reduce((m, t) => Math.max(m, +t['排序'] || 0), 0);
   appendRow_('工種清單', { '工種': name, '色碼': d.color || '#8A7F75', '排序': max + 1, '啟用': 'Y' });
+  return true;
+}
+
+/* ========== 進度計畫（第 4 項：不受待決規則影響的部分） ==========
+ * 暫定：負責設計師與主管可以編排進度、確認實際開始、標記施工完成；只有主管可以「定案」。
+ * 定案前：日期直接改（只改「目前計畫」）。定案時：把目前計畫複製成「原計畫」（基準）。
+ * 定案後：改期只改「目前計畫」且必須填原因；所有變動寫入「進度異動紀錄」。
+ * 實際開始：系統以該工種第一篇日誌作為「參考」，由負責設計師確認；更正要填原因。
+ * 施工完成、查驗通過、下一工序放行分開記錄；查驗與放行的規則待 Boss 決定，這裡尚未製作。
+ */
+function canPlan_(me, c) { return me.leader || (!!c && c['負責設計師'] === me.id); }
+function planGuard_(me, caseId) {
+  const c = caseRow_(caseId);
+  if (!c) throw new Error('找不到案件');
+  if (!canPlan_(me, c)) throw new Error('只有案件負責設計師或主管可以編排進度');
+  return c;
+}
+function planItem_(id) { return rowObj_(findRow_('進度計畫', '工序ID', id)); }
+function planLog_(me, caseId, itemId, what, from, to, why) {
+  appendRow_('進度異動紀錄', { '紀錄ID': uid_(), '案件ID': caseId, '工序ID': itemId || '', '項目': what, '原值': from || '', '新值': to || '', '原因': why || '', '修改人': me.id, '時間': now_() });
+}
+function checkRange_(s, e) {
+  if (s && !/^\d{4}\/\d{2}\/\d{2}$/.test(s) || e && !/^\d{4}\/\d{2}\/\d{2}$/.test(e)) throw new Error('日期格式不對');
+  if (s && e && e < s) throw new Error('完成日不能早於開始日');
+}
+/** 加 n 個工作天（週六日不算；國定假日尚未處理） */
+function addWorkdays_(ymd, n) {
+  const p = String(ymd).split('/').map(Number);
+  let d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+  const wk = () => { const w = d.getUTCDay(); return w !== 0 && w !== 6; };
+  while (!wk()) d = new Date(d.getTime() + 864e5);
+  for (let i = 0; i < n; i++) { do { d = new Date(d.getTime() + 864e5); } while (!wk()); }
+  const z = x => (x < 10 ? '0' : '') + x;
+  return d.getUTCFullYear() + '/' + z(d.getUTCMonth() + 1) + '/' + z(d.getUTCDate());
+}
+
+/** 新增或修改工序 */
+function savePlanItem_(me, d) {
+  const c = planGuard_(me, d.caseId), locked = !!c['進度定案時間'];
+  const start = ymd_(d.start), end = ymd_(d.end), why = String(d.reason || '').trim();
+  checkRange_(start, end);
+  if (!String(d.name || '').trim()) throw new Error('請填寫工序名稱');
+  if (!d.id) {
+    if (locked && !why) throw new Error('進度已定案，新增工序請填寫原因');
+    const id = uid_(), maxOrder = readTable_('進度計畫').filter(r => r['案件ID'] === d.caseId).reduce((m, r) => Math.max(m, +r['順序'] || 0), 0);
+    appendRow_('進度計畫', { '工序ID': id, '案件ID': d.caseId, '順序': d.order || maxOrder + 1, '工種': d.trade || '', '工序名稱': String(d.name).trim(),
+      '目前計畫開始': start, '目前計畫完成': end, '狀態': '計畫', '最後修改人': me.id, '最後修改時間': now_() });
+    if (locked) planLog_(me, d.caseId, id, '新增工序', '', String(d.name).trim() + ' ' + start + '～' + end, why);
+    return id;
+  }
+  const r = planItem_(d.id);
+  if (r['案件ID'] !== d.caseId) throw new Error('工序不屬於這個案件');
+  const patch = { '工種': d.trade || '', '工序名稱': String(d.name).trim(), '目前計畫開始': start, '目前計畫完成': end };
+  if (d.order) patch['順序'] = d.order;
+  const dateChanged = start !== (r['目前計畫開始'] || '') || end !== (r['目前計畫完成'] || '');
+  if (locked && dateChanged && !why) throw new Error('進度已定案，改期請填寫原因');
+  if (locked && dateChanged) planLog_(me, d.caseId, d.id, '改期', (r['目前計畫開始'] || '') + '～' + (r['目前計畫完成'] || ''), start + '～' + end, why);
+  if (locked && patch['工序名稱'] !== r['工序名稱']) planLog_(me, d.caseId, d.id, '改名稱', r['工序名稱'], patch['工序名稱'], why);
+  patch['改期原因'] = locked && dateChanged ? why : (r['改期原因'] || '');
+  patch['最後修改人'] = me.id; patch['最後修改時間'] = now_();
+  updateRow_('進度計畫', '工序ID', d.id, patch);
+  return d.id;
+}
+
+/** 取消工序（不刪除，保留紀錄）；定案後要填原因 */
+function cancelPlanItem_(me, d) {
+  const r = planItem_(d.id), c = planGuard_(me, r['案件ID']);
+  const why = String(d.reason || '').trim();
+  if (c['進度定案時間'] && !why) throw new Error('進度已定案，取消工序請填寫原因');
+  if (r['實際開始']) throw new Error('這個工序已經開始，不能取消');
+  updateRow_('進度計畫', '工序ID', d.id, { '狀態': '取消', '最後修改人': me.id, '最後修改時間': now_() });
+  planLog_(me, r['案件ID'], d.id, '取消工序', r['工序名稱'], '', why);
+  return true;
+}
+
+/** 套用工序範本（範本為示範內容，待 Boss 確認）。有預計開工日就依標準工期排出草稿日期 */
+function applyTemplate_(me, d) {
+  const c = planGuard_(me, d.caseId);
+  if (readTable_('進度計畫').some(r => r['案件ID'] === d.caseId && r['狀態'] !== '取消')) throw new Error('這個案件已經有工序，不能再套用範本');
+  const tpl = readTable_('範本_工序').filter(t => t['工序名稱']).sort((a, b) => (+a['順序'] || 0) - (+b['順序'] || 0));
+  if (!tpl.length) throw new Error('工序範本是空的');
+  let cursor = c['預計開工日'] || '', prevStart = '';
+  tpl.forEach((t, i) => {
+    const days = Math.max(1, +t['標準工期（工作天）'] || 1);
+    let s = '', e = '';
+    if (cursor) {
+      const parallel = /同步/.test(t['備註'] || '') && prevStart;
+      s = parallel ? prevStart : addWorkdays_(cursor, 0);
+      e = addWorkdays_(s, days - 1);
+      if (!parallel) { cursor = addWorkdays_(e, 1); prevStart = s; }
+    }
+    appendRow_('進度計畫', { '工序ID': uid_(), '案件ID': d.caseId, '順序': i + 1, '工種': t['工種'] || '', '工序名稱': t['工序名稱'],
+      '目前計畫開始': s, '目前計畫完成': e, '查驗點': t['查驗點'] || '', '狀態': '計畫', '範本工序ID': t['工序ID'] || '', '最後修改人': me.id, '最後修改時間': now_() });
+  });
+  planLog_(me, d.caseId, '', '套用範本', '', tpl.length + ' 個工序（示範範本）', c['預計開工日'] ? '依預計開工日 ' + c['預計開工日'] + ' 排出草稿日期' : '案件沒有預計開工日，日期留空');
+  return tpl.length;
+}
+
+/** 定案（主管）：把目前計畫複製成原計畫，之後改期都要填原因 */
+function lockPlan_(me, d) {
+  if (!me.leader) throw new Error('只有主管可以定案進度計畫');
+  const c = caseRow_(d.caseId);
+  if (!c) throw new Error('找不到案件');
+  if (c['進度定案時間']) throw new Error('進度計畫已經定案');
+  const items = readTable_('進度計畫').filter(r => r['案件ID'] === d.caseId && r['狀態'] !== '取消');
+  if (!items.length) throw new Error('還沒有任何工序');
+  const miss = items.filter(r => !r['目前計畫開始'] || !r['目前計畫完成']);
+  if (miss.length) throw new Error('還有 ' + miss.length + ' 個工序沒有排日期（例如「' + miss[0]['工序名稱'] + '」）');
+  items.forEach(r => updateRow_('進度計畫', '工序ID', r['工序ID'], { '原計畫開始': r['目前計畫開始'], '原計畫完成': r['目前計畫完成'] }));
+  updateRow_('案件', '案件ID', d.caseId, { '進度定案時間': now_(), '進度定案人': me.id });
+  planLog_(me, d.caseId, '', '進度定案', '', items.length + ' 個工序', '');
+  return true;
+}
+
+/** 確認實際開始日（日誌只是參考）；已確認過再改視為更正，要填原因 */
+function setActualStart_(me, d) {
+  const r = planItem_(d.id); planGuard_(me, r['案件ID']);
+  const date = ymd_(d.date), why = String(d.reason || '').trim();
+  checkRange_(date, '');
+  if (!date) throw new Error('請選擇日期');
+  if (r['實際完成'] && date > r['實際完成']) throw new Error('實際開始不能晚於施工完成日');
+  if (r['實際開始'] && r['實際開始'] !== date && !why) throw new Error('更正實際開始日請填寫原因');
+  if (r['實際開始'] === date) return true;
+  updateRow_('進度計畫', '工序ID', d.id, { '實際開始': date, '實際開始確認人': me.id, '最後修改人': me.id, '最後修改時間': now_() });
+  planLog_(me, r['案件ID'], d.id, r['實際開始'] ? '更正實際開始' : '確認實際開始', r['實際開始'], date, why || (d.basis ? '參考：' + d.basis : ''));
+  return true;
+}
+
+/** 施工完成（與查驗、放行分開）；撤回或更正要填原因 */
+function setDone_(me, d) {
+  const r = planItem_(d.id); planGuard_(me, r['案件ID']);
+  const why = String(d.reason || '').trim();
+  if (d.undo) {
+    if (!r['實際完成']) return true;
+    if (!why) throw new Error('撤回施工完成請填寫原因');
+    updateRow_('進度計畫', '工序ID', d.id, { '實際完成': '', '實際完成確認人': '', '最後修改人': me.id, '最後修改時間': now_() });
+    planLog_(me, r['案件ID'], d.id, '撤回施工完成', r['實際完成'], '', why);
+    return true;
+  }
+  const date = ymd_(d.date);
+  if (!date) throw new Error('請選擇日期');
+  if (!r['實際開始']) throw new Error('請先確認實際開始日');
+  checkRange_(r['實際開始'], date);
+  if (r['實際完成'] && r['實際完成'] !== date && !why) throw new Error('更正施工完成日請填寫原因');
+  if (r['實際完成'] === date) return true;
+  updateRow_('進度計畫', '工序ID', d.id, { '實際完成': date, '實際完成確認人': me.id, '最後修改人': me.id, '最後修改時間': now_() });
+  planLog_(me, r['案件ID'], d.id, r['實際完成'] ? '更正施工完成' : '施工完成', r['實際完成'], date, why);
   return true;
 }
 

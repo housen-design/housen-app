@@ -165,6 +165,15 @@ textarea{min-height:84px;resize:vertical}
 .cdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bad);margin-left:6px;vertical-align:middle}
 /* 驗收修正 2026-11-19：點擊範圍、滑動提示、長字換行、橫式版面、更新失敗提示 */
 .pv button{min-height:40px;padding:9px 14px;font-size:13px}
+.plist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.prow{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.phead{display:flex;gap:10px;align-items:flex-start;padding:12px 12px;cursor:pointer}
+.pno{flex:0 0 22px;height:22px;border-radius:50%;background:#f0ebe4;color:#7a7067;font-size:11px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.pmain{flex:1;min-width:0}.pt{font-size:14.5px;font-weight:500;overflow-wrap:anywhere}.ps{font-size:12px;color:var(--muted);margin-top:3px}
+.pold{margin-left:6px;text-decoration:line-through;opacity:.75}.pchk{color:var(--warn)}
+.phint{margin-top:6px;font-size:12px;background:var(--info2);color:var(--info);border-radius:8px;padding:5px 8px}
+.pbody{display:none;padding:0 12px 12px 44px}.prow.open .pbody{display:block}
+.phist{margin-top:10px;font-size:12px;color:#5a5048;line-height:1.6}.phist>div{padding:6px 0;border-top:1px dashed var(--line)}.phist span{color:var(--muted)}
 .fsec{margin:18px 0 -4px;font-size:12px;color:var(--gold,#AF9263);letter-spacing:.12em;font-weight:500;border-top:1px solid var(--line);padding-top:12px}
 .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.dgrid>div{min-width:0}.dgrid input{width:100%}
 .pvwrap{position:relative}
@@ -417,11 +426,117 @@ function render() {
   $('#nav').innerHTML = TABS.map(([k, n, ic]) => { const b = k === 'instr' ? nIns : k === 'log' ? nLog : 0; return `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><span class="ic">${ic}</span>${n}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('');
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
   const fab = $('#fab'); fab.className = 'fab'; fab.style.display = 'none';
-  ({ sum: vSum, log: vLog, instr: vInstr, client: vSoon, prog: vSoon, docs: vSoon })[S.tab]();
+  ({ sum: vSum, log: vLog, instr: vInstr, client: vSoon, prog: vProg, docs: vSoon })[S.tab]();
   if (preview()) return;
   if (S.tab === 'log') { fab.style.display = 'block'; fab.textContent = '＋ 新增日誌'; fab.onclick = () => logForm(null); }
   if (S.tab === 'instr' && leader()) { fab.style.display = 'block'; fab.textContent = '＋ 下指示'; fab.onclick = () => newIns(''); }
 }
+
+/* ===== 進度計畫（第 4 項先行部分；查驗與放行規則待定） ===== */
+const ymdShort = v => v ? String(v).slice(5).replace('/', '/') : '';
+const range = (a, b) => a || b ? `${ymdShort(a) || '?'}–${ymdShort(b) || '?'}` : '未排日期';
+/** 日誌參考：這個工種最早一篇日誌的日期（只當參考，不自動認定） */
+function logHint(item) {
+  if (!item.trade) return '';
+  const ds = S.data.logs.filter(l => l.trades.includes(item.trade)).map(l => l.date).sort();
+  if (!ds.length) return '';
+  const near = item.start ? ds.filter(x => x >= addDays(item.start, -14)) : ds;
+  return item.start ? (near[0] || '') : ds[0];   // 有計畫日期時，只參考計畫開始前兩週以後的日誌
+}
+function addDays(ymd, n) { const d = new Date(String(ymd).replace(/\//g, '-') + 'T00:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0'); }
+function vProg() {
+  const d = S.data, items = d.plan.filter(p => !p.cancelled), can = d.canPlan && !preview(), locked = !!d.planLocked;
+  S.popen = S.popen || {};
+  const st = p => p.actEnd ? ['施工完成', 'c-ok'] : p.actStart ? ['進行中', 'c-info'] : ['未開始', 'c-mute'];
+  let h = `<div class="card"><div class="t">${locked ? '進度計畫已定案' : '進度計畫草擬中'}</div>
+    <div class="s">${locked ? `${esc(short(pname(d.planLockedBy)))} 於 ${esc(String(d.planLocked).slice(0, 16))} 定案。之後改期只改「目前計畫」並須填原因，原計畫保留作比對。` : '日期可直接調整；主管「定案」後，原計畫會固定下來，之後改期要填原因。'}</div>
+    <div class="lst warn">查驗與放行的規則還在等 Boss 決定，這一頁目前只處理「排計畫、確認實際開始、施工完成」。</div>
+    ${can ? `<div class="btns" style="flex-wrap:wrap">${!items.length ? '<button class="btn sec sm" id="ptpl">套用工序範本（示範）</button>' : ''}<button class="btn ghost sm" id="padd">＋ 新增工序</button>${leader() && !locked && items.length ? '<button class="btn pri sm" id="plock">定案</button>' : ''}</div>` : ''}</div>`;
+  if (!items.length) h += `<div class="soon"><b>還沒有工序</b>${can ? '可以先套用範本（示範內容，待 Boss 確認），再依案件調整。' : '等負責設計師排定。'}</div>`;
+  h += `<div class="plist">` + items.map((p, i) => {
+    const [stt, cls] = st(p), hint = !p.actStart ? logHint(p) : '', moved = locked && (p.baseStart !== p.start || p.baseEnd !== p.end);
+    const hist = d.planLog.filter(x => x.item === p.id);
+    return `<div class="prow ${S.popen[p.id] ? 'open' : ''}" data-pid="${p.id}">
+      <div class="phead"><span class="pno">${i + 1}</span><div class="pmain"><div class="pt">${p.trade ? `<span class="tchip" style="background:${tcolor(p.trade)}">${esc(p.trade)}</span> ` : ''}${esc(p.name)}</div>
+        <div class="ps">計畫 ${range(p.start, p.end)}${moved ? `<span class="pold">原 ${range(p.baseStart, p.baseEnd)}</span>` : ''}</div>
+        <div class="ps">實際 ${p.actStart ? ymdShort(p.actStart) + ' 開始' : '—'}${p.actEnd ? '・' + ymdShort(p.actEnd) + ' 完成' : ''}</div>
+        ${p.check ? `<div class="ps pchk">查驗點：${esc(p.check)}（規則待定）</div>` : ''}
+        ${hint ? `<div class="phint">日誌參考：${ymdShort(hint)} 有「${esc(p.trade)}」日誌${can ? '，請確認是否為實際開始日' : ''}</div>` : ''}
+      </div>${chip(stt, cls)}</div>
+      <div class="pbody">
+        ${can ? `<div class="btns" style="flex-wrap:wrap">
+          <button class="btn ghost sm" data-pedit="${p.id}">${locked ? '改期／編輯' : '編輯'}</button>
+          <button class="btn ${p.actStart ? 'ghost' : 'pri'} sm" data-pstart="${p.id}">${p.actStart ? '更正實際開始' : '確認實際開始'}</button>
+          ${p.actStart ? `<button class="btn ${p.actEnd ? 'ghost' : 'ok'} sm" data-pdone="${p.id}">${p.actEnd ? '更正／撤回完成' : '施工完成'}</button>` : ''}
+          ${!p.actStart ? `<button class="btn ghost sm" data-pcancel="${p.id}">取消工序</button>` : ''}</div>` : ''}
+        ${p.actStart ? `<div class="s">實際開始由 ${esc(short(pname(p.actStartBy)))} 確認${p.actEnd ? `；施工完成由 ${esc(short(pname(p.actEndBy)))} 確認` : ''}</div>` : ''}
+        ${hist.length ? `<div class="phist">${hist.map(x => `<div>${esc(String(x.at).slice(5, 16))} ${esc(short(pname(x.by)))}｜${esc(x.what)}${x.from || x.to ? `：${esc(x.from || '—')} → ${esc(x.to || '—')}` : ''}${x.why ? `<br><span>原因：${esc(x.why)}</span>` : ''}</div>`).join('')}</div>` : ''}
+      </div></div>`;
+  }).join('') + `</div>`;
+  const gl = d.planLog.filter(x => !x.item);
+  if (gl.length) h += `<h2>計畫異動</h2><div class="card phist">${gl.map(x => `<div>${esc(String(x.at).slice(5, 16))} ${esc(short(pname(x.by)))}｜${esc(x.what)}${x.to ? '：' + esc(x.to) : ''}${x.why ? `<br><span>${esc(x.why)}</span>` : ''}</div>`).join('')}</div>`;
+  $('#main').innerHTML = h;
+  $$('.phead').forEach(e => e.onclick = () => { const r = e.parentElement, id = r.dataset.pid; S.popen[id] = !S.popen[id]; r.classList.toggle('open', S.popen[id]); });
+  const find = id => d.plan.find(x => x.id === id);
+  if ($('#padd')) $('#padd').onclick = () => planForm(null);
+  if ($('#ptpl')) $('#ptpl').onclick = () => planAct('applyTemplate', { caseId: S.cur }, '已套用範本（示範內容，請依案件調整）', `套用工序範本？\n範本是示範內容、尚未經 Boss 確認${d.info['預計開工日'] ? '；會依預計開工日 ' + d.info['預計開工日'] + ' 排出草稿日期' : '；案件沒有預計開工日，日期會留空'}。`);
+  if ($('#plock')) $('#plock').onclick = () => planAct('lockPlan', { caseId: S.cur }, '進度計畫已定案', '定案後原計畫會固定，之後改期都要填原因。確定定案？');
+  $$('[data-pedit]').forEach(b => b.onclick = () => planForm(find(b.dataset.pedit)));
+  $$('[data-pstart]').forEach(b => b.onclick = () => startForm(find(b.dataset.pstart)));
+  $$('[data-pdone]').forEach(b => b.onclick = () => doneForm(find(b.dataset.pdone)));
+  $$('[data-pcancel]').forEach(b => b.onclick = () => {
+    sheet(`<h3>取消工序</h3><div class="s">不會刪除，會保留在異動紀錄。</div>${locked ? '<label>原因（必填）</label>' : '<label>原因</label>'}<textarea id="pwhy"></textarea><div class="btns"><button class="btn pri" id="pgo">取消這個工序</button></div>`);
+    $('#pgo').onclick = () => planAct('cancelPlanItem', { id: b.dataset.pcancel, reason: $('#pwhy').value.trim() }, '已取消工序');
+  });
+}
+async function planAct(action, payload, msg, ask) {
+  if (guard()) return;
+  if (ask && !confirm(ask)) return;
+  busy(true, '處理中…');
+  try { await API(action, payload); await refreshCase(); closeSheet(); render(); toast(msg); }
+  catch (e) { toast(e); } finally { busy(false); }
+}
+function planForm(p) {
+  if (guard()) return;
+  const locked = !!S.data.planLocked, trades = S.home.trades.map(t => t.name);
+  const tl = [...trades, ...(p && p.trade && !trades.includes(p.trade) ? [p.trade] : [])];
+  sheet(`<h3>${p ? '編輯工序' : '新增工序'}</h3>${locked ? '<div class="warnbox">進度已定案：改期或新增工序都要填原因，原計畫不會被改動。</div>' : ''}
+    <label>工序名稱</label><input id="pn" value="${esc(p ? p.name : '')}" placeholder="例如：浴室防水與試水">
+    <label>工種</label><select id="ptr"><option value=""></option>${tl.map(t => `<option ${p && p.trade === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+    <div class="dgrid"><div><label>計畫開始</label><input type="date" id="ps" value="${p ? toInput(p.start) : ''}"></div><div><label>計畫完成</label><input type="date" id="pe" value="${p ? toInput(p.end) : ''}"></div></div>
+    ${locked ? '<label>原因（改期或新增時必填）</label><textarea id="pwhy" placeholder="例如：客戶追加浴室磁磚，泥作延後三天"></textarea>' : ''}
+    <div class="btns"><button class="btn pri" id="pgo">儲存</button></div>`);
+  $('#pgo').onclick = () => {
+    const name = $('#pn').value.trim(); if (!name) return toast('請填寫工序名稱');
+    const s = $('#ps').value, e = $('#pe').value; if (s && e && e < s) return toast('完成日不能早於開始日');
+    planAct('savePlanItem', { caseId: S.cur, id: p ? p.id : '', name, trade: $('#ptr').value, start: s, end: e, reason: $('#pwhy') ? $('#pwhy').value.trim() : '' }, p ? '已儲存' : '已新增工序');
+  };
+}
+function startForm(p) {
+  if (guard()) return;
+  const hint = logHint(p), fix = !!p.actStart;
+  sheet(`<h3>${fix ? '更正實際開始日' : '確認實際開始日'}</h3><div class="s">${esc(p.name)}</div>
+    ${hint ? `<div class="lst mute">日誌參考：${esc(hint)} 有「${esc(p.trade)}」日誌。這只是參考，請以現場實際狀況為準。</div>` : '<div class="lst mute">沒有對應工種的日誌可參考，請依現場實際狀況填寫。</div>'}
+    <label>實際開始日</label><input type="date" id="pd" value="${toInput(p.actStart || hint || today())}">
+    ${fix ? '<label>更正原因（必填）</label><textarea id="pwhy" placeholder="例如：11/18 只是材料進場，實際施工從 11/20 開始"></textarea>' : ''}
+    <div class="btns"><button class="btn pri" id="pgo">${fix ? '更正' : '確認'}</button></div>`);
+  $('#pgo').onclick = () => {
+    const date = $('#pd').value; if (!date) return toast('請選擇日期');
+    planAct('setActualStart', { id: p.id, date, reason: $('#pwhy') ? $('#pwhy').value.trim() : '', basis: hint && toInput(hint) === date ? hint + ' 日誌' : '' }, fix ? '已更正實際開始日' : '已確認實際開始日');
+  };
+}
+function doneForm(p) {
+  if (guard()) return;
+  const fix = !!p.actEnd;
+  sheet(`<h3>${fix ? '更正或撤回施工完成' : '施工完成'}</h3><div class="s">${esc(p.name)}・實際開始 ${esc(p.actStart)}</div>
+    <div class="lst mute">「施工完成」只表示這個工序做完了，和查驗通過、下一工序放行分開記錄。</div>
+    <label>施工完成日</label><input type="date" id="pd" value="${toInput(p.actEnd || today())}">
+    ${fix ? '<label>原因（必填）</label><textarea id="pwhy"></textarea>' : ''}
+    <div class="btns"><button class="btn ok" id="pgo">${fix ? '更正完成日' : '確認施工完成'}</button>${fix ? '<button class="btn ghost" id="pundo">撤回完成</button>' : ''}</div>`);
+  $('#pgo').onclick = () => { const date = $('#pd').value; if (!date) return toast('請選擇日期'); planAct('setDone', { id: p.id, date, reason: $('#pwhy') ? $('#pwhy').value.trim() : '' }, fix ? '已更正' : '已記錄施工完成'); };
+  if ($('#pundo')) $('#pundo').onclick = () => planAct('setDone', { id: p.id, undo: true, reason: $('#pwhy').value.trim() }, '已撤回施工完成');
+}
+const today = () => { const d = new Date(); return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0'); };
 
 function vSum() {
   const c = S.data.info, logs = S.data.logs, ins = S.data.ins, me = ME().id;
