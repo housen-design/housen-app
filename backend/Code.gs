@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v4.3（日誌漏填追蹤；文件頁：週報、工程履歷；查驗紀錄、SOP、里程碑；客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
+ * 浩森設計工作管理系統｜後端 v4.4（統計、結案唯讀、保固報修；日誌漏填追蹤；文件頁：週報、工程履歷；查驗紀錄、SOP、里程碑；客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -90,7 +90,7 @@ function run_(email, action, payload) {
     if (real.role !== 'Boss' || !TEST_MODE) throw new Error('沒有預覽權限');
     me = Object.assign(userById_(payload.as), { preview: true });
   }
-  const READ = { home: getHome_, case: getCase_, thumbs: getThumbs_, pdfView: pdfView_ };   // 只讀，預覽模式也可用
+  const READ = { home: getHome_, case: getCase_, thumbs: getThumbs_, pdfView: pdfView_, stats: stats_ };   // 只讀，預覽模式也可用
   const SLOW = { pdfLog: pdfLog_, clientPdf: clientPdf_, reportPdf: reportPdf_ };   // 產生 PDF 較久，不鎖住其他人
   const WRITE = {
     saveLog: saveLog_, updateLog: updateLog_, deletePhoto: deletePhoto_,
@@ -101,12 +101,13 @@ function run_(email, action, payload) {
     savePlanItem: savePlanItem_, cancelPlanItem: cancelPlanItem_, applyTemplate: applyTemplate_, lockPlan: lockPlan_,
     setActualStart: setActualStart_, setDone: setDone_,
     saveMeeting: saveMeeting_, reviewMeeting: reviewMeeting_, saveClientIns: saveClientIns_, confirmClientIns: confirmClientIns_,
-    markNoWork: markNoWork_, saveCheck: saveCheck_, applySop: applySop_, setSop: setSop_, applyMilestones: applyMilestones_, saveMilestone: saveMilestone_, setMilestone: setMilestone_
+    markNoWork: markNoWork_, saveCheck: saveCheck_, saveRepair: saveRepair_, applySop: applySop_, setSop: setSop_, applyMilestones: applyMilestones_, saveMilestone: saveMilestone_, setMilestone: setMilestone_
   };
   if (READ[action]) return READ[action](me, payload);
   if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); return SLOW[action](me, payload); }
   if (WRITE[action]) {
     if (me.preview) throw new Error('預覽模式只能看，不能存檔');
+    closedGuard_(action, payload);
     const lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try { return WRITE[action](me, payload); } finally { lock.releaseLock(); }
@@ -314,6 +315,10 @@ function getHome_(me) {
   caseRows.forEach(c => { const m = missingDays_(c, logs, exempt, rule); missMap[c['案件ID']] = m;
     if (c['負責設計師'] === me.id) m.slice(0, 5).forEach(dd => items.push({ kind: 'miss', id: c['案件ID'] + ':' + dd, caseId: c['案件ID'], caseName: c['案件名稱'], date: dd, status: 'miss', created: dd })); });
   items.forEach(i => { if (i.kind === 'ins' && i.status === IS.TODO && !i.due && i.created) i.staleDays = Math.floor((Date.now() - new Date(String(i.created).replace(/\//g, '-').replace(' ', 'T') + '+08:00').getTime()) / 864e5); });
+  // 保固報修：交給我、還沒完成的
+  tryTable_('保固報修').filter(x => x['負責人'] === me.id && x['狀態'] !== '已完成').forEach(x => items.push({
+    kind: 'wr', id: x['報修ID'], caseId: x['案件ID'], caseName: cname(x['案件ID']), text: x['內容'], status: x['狀態'], created: x['報修日期'], due: ''
+  }));
   // 設計階段里程碑：交給我、未完成的（期限 7 天內或已逾期）
   const soon = fmt_(new Date(Date.now() + 7 * 864e5), 'yyyy/MM/dd');
   tryTable_('里程碑').filter(x => x['負責人'] === me.id && x['狀態'] !== '已完成' && x['目前期限'] && x['目前期限'] <= soon).forEach(x => items.push({
@@ -424,7 +429,9 @@ function getCase_(me, p) {
     status: x['狀態'], returns: +x['退回次數'] || 0, why: x['改期原因'], note: x['備註'], order: +x['順序'] || 0
   })).sort((a, b) => (a.due || '9').localeCompare(b.due || '9') || a.order - b.order);
   return { info: c, canEdit: canEditCase_(me, c), canPlan: canPlan_(me, c), logs, ins, todos, plan, planLog, meetings, cins, checks, checkTpl, sop, ms,
-    settings: settings_(),
+    settings: settings_(), closed: c['階段'] === '結案',
+    repairs: tryTable_('保固報修').filter(x => x['案件ID'] === p.id).map(x => ({ id: x['報修ID'], date: x['報修日期'], text: x['內容'], owner: x['負責人'], status: x['狀態'], result: x['處理結果'], done: x['完成日'], by: x['記錄人'] }))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date))),
     docs: tryTable_('文件紀錄').filter(x => x['案件ID'] === p.id).map(x => ({ id: x['文件ID'], date: x['日期'], name: x['文件名稱'], type: x['文件類型'], url: x['檔案連結'], by: x['產生人'], at: x['產生時間'] || x['日期'] }))
       .sort((a, b) => String(b.at).localeCompare(String(a.at))),
     planLocked: c['進度定案時間'] || '', planLockedBy: c['進度定案人'] || '' };
@@ -759,8 +766,105 @@ function saveCase_(me, d) {
 
 function setStage_(me, d) {
   if (!me.leader) throw new Error('只有主管可以改案件階段');
-  updateRow_('案件', '案件ID', d.id, { '階段': d.stage, '最後修改時間': now_(), '最後修改人': me.id });
+  const c = caseRow_(d.id), patch = { '階段': d.stage, '最後修改時間': now_(), '最後修改人': me.id };
+  if (d.stage === '結案' && c) {   // 結案：補上結案日與保固到期日（保固年限在公司設定）
+    const end = c['結案日'] || today_();
+    patch['結案日'] = end;
+    if (!c['保固到期日']) { const p = end.split('/'); patch['保固到期日'] = (+p[0] + (+setting_('保固年限', 1) || 1)) + '/' + p[1] + '/' + p[2]; }
+  }
+  updateRow_('案件', '案件ID', d.id, patch);
   return true;
+}
+
+/* ========== 結案後唯讀 ==========
+ * 案件在「結案」階段時，日誌、指示、進度、客戶紀錄都不能再新增或修改；
+ * 仍可：改階段（主管重新開啟）、修改案件資料、保固報修、產生報告。
+ */
+const CLOSED_OK = ['setStage', 'saveCaseInfo', 'saveRepair', 'saveTodo', 'setTodo', 'saveCase', 'saveTrade', 'shareLog',
+  'saveSetting', 'saveTemplateRow', 'suggestTemplate', 'setSuggestion'];
+function closedGuard_(action, d) {
+  if (CLOSED_OK.indexOf(action) >= 0 || !d) return;
+  let cid = d.caseId || '';
+  const look = (t, k, id) => { try { return rowObj_(findRow_(t, k, id))['案件ID']; } catch (e) { return ''; } };
+  if (!cid && d.id) {
+    const map = {
+      updateLog: ['工程日誌', '日誌ID'], submitLog: ['工程日誌', '日誌ID'], confirmLog: ['工程日誌', '日誌ID'], signLog: ['工程日誌', '日誌ID'],
+      returnLog: ['工程日誌', '日誌ID'], escalateLog: ['工程日誌', '日誌ID'], seenLog: ['工程日誌', '日誌ID'],
+      actIns: ['主管指示', '指示ID'], cancelPlanItem: ['進度計畫', '工序ID'], setActualStart: ['進度計畫', '工序ID'], setDone: ['進度計畫', '工序ID'],
+      reviewMeeting: ['會議', '會議ID'], confirmClientIns: ['客戶指示', '指示ID'], setSop: ['案件SOP', 'ID'], setMilestone: ['里程碑', '任務ID']
+    };
+    if (map[action]) cid = look(map[action][0], map[action][1], d.id);
+  }
+  if (!cid && d.itemId) cid = look('進度計畫', '工序ID', d.itemId);
+  if (!cid && action === 'deletePhoto' && d.id) cid = look('日誌照片', '照片ID', d.id);
+  const c = cid ? caseRow_(cid) : null;
+  if (c && c['階段'] === '結案') throw new Error('案件已結案，資料唯讀；如需修改請主管把階段改回');
+}
+
+/* ========== 保固報修 ========== */
+const REPAIR_ST = ['待處理', '處理中', '已完成'];
+function saveRepair_(me, d) {
+  const c = caseRow_(d.caseId);
+  if (!c) throw new Error('找不到案件');
+  if (!d.id) {
+    if (!String(d.text || '').trim()) throw new Error('請填寫報修內容');
+    appendRow_('保固報修', { '報修ID': uid_(), '案件ID': d.caseId, '報修日期': ymd_(d.date) || today_(), '內容': String(d.text).trim(), '負責人': d.owner || c['負責設計師'] || '',
+      '狀態': '待處理', '記錄人': me.id, '建立時間': now_() });
+    return true;
+  }
+  const r = rowObj_(findRow_('保固報修', '報修ID', d.id));
+  if (!(me.leader || r['負責人'] === me.id || c['負責設計師'] === me.id)) throw new Error('只有負責人、負責設計師或主管可以更新');
+  const st = REPAIR_ST.indexOf(d.status) >= 0 ? d.status : r['狀態'];
+  if (st === '已完成' && !String(d.result || r['處理結果'] || '').trim()) throw new Error('完成請寫處理結果');
+  updateRow_('保固報修', '報修ID', d.id, { '狀態': st, '處理結果': d.result != null ? d.result : r['處理結果'], '負責人': d.owner || r['負責人'],
+    '完成日': st === '已完成' ? (r['完成日'] || today_()) : '' });
+  return true;
+}
+
+/* ========== 統計（可看績效者） ==========
+ * 期間內每人的：日誌篇數、補登篇數、負責案件漏填天數、指示收到／逾期回報／被退回、簽核篇數與平均耗時、里程碑完成與逾期。
+ */
+function stats_(me, d) {
+  if (!me.seePerf) throw new Error('沒有查看績效的權限');
+  const from = ymd_(d.from), to = ymd_(d.to);
+  if (!from || !to || to < from) throw new Error('請選擇正確的期間');
+  const inR = v => v && String(v).slice(0, 10) >= from && String(v).slice(0, 10) <= to;
+  const logs = readTable_('工程日誌'), ins = readTable_('主管指示').filter(i => i['指示內容']), ms = tryTable_('里程碑'), cases = readTable_('案件');
+  const exempt = tryTable_('日誌豁免'), rule = logRule_();
+  const hrs = (a, b) => (new Date(String(b).replace(/\//g, '-').replace(' ', 'T') + '+08:00') - new Date(String(a).replace(/\//g, '-').replace(' ', 'T') + '+08:00')) / 36e5;
+  // 期間內漏填（依目前規則回推）
+  const missBy = {};
+  cases.filter(c => c['階段'] === '施工' || c['結案日']).forEach(c => {
+    let t = new Date(from.replace(/\//g, '-') + 'T12:00:00+08:00');
+    const end = to < today_() ? to : fmt_(new Date(Date.now() - 864e5), 'yyyy/MM/dd'), start = [c['預計開工日'], rule.since].filter(String).sort().pop() || '';
+    while (fmt_(t, 'yyyy/MM/dd') <= end) {
+      const ymd = fmt_(t, 'yyyy/MM/dd');
+      if ((!start || ymd >= start) && (!c['結案日'] || ymd <= c['結案日']) && rule.days.indexOf(WEEK[+fmt_(t, 'u') % 7]) >= 0
+        && !logs.some(l => l['案件ID'] === c['案件ID'] && l['日期'] === ymd && logStatus_(l) !== LS.DRAFT) && !exempt.some(x => x['案件ID'] === c['案件ID'] && x['日期'] === ymd))
+        missBy[c['負責設計師']] = (missBy[c['負責設計師']] || 0) + 1;
+      t = new Date(t.getTime() + 864e5);
+    }
+  });
+  const rows = people_().filter(p => p.active).map(p => {
+    const myLogs = logs.filter(l => l['填寫人'] === p.id && inR(l['日期']));
+    const late = myLogs.filter(l => l['建立時間'] && String(l['建立時間']).slice(0, 10) > l['日期']);
+    const got = ins.filter(i => i['負責人'] === p.id && inR(i['建立時間']));
+    const lateReply = got.filter(i => i['期限'] && ((i['回報時間'] && String(i['回報時間']).slice(0, 10) > i['期限']) || (!i['回報時間'] && i['期限'] < today_())));
+    const signed = logs.filter(l => l['簽核者'] === p.id && inR(l['簽核時間']));
+    const signHrs = signed.map(l => l['送出時間'] ? hrs(l['送出時間'], l['簽核時間']) : null).filter(x => x !== null && x >= 0);
+    const myMs = ms.filter(m => m['負責人'] === p.id && inR(m['目前期限']));
+    return {
+      id: p.id, name: p.name, role: p.role,
+      logs: myLogs.length, lateLogs: late.length, missing: missBy[p.id] || 0,
+      insGot: got.length, insLate: lateReply.length, insReturns: got.reduce((a, i) => a + (+i['退回次數'] || 0), 0),
+      signed: signed.length, signHrs: signHrs.length ? Math.round(signHrs.reduce((a, b) => a + b, 0) / signHrs.length * 10) / 10 : null,
+      signLate: signed.filter(l => l['簽核期限'] && String(l['簽核時間']).slice(0, 16) > l['簽核期限']).length,
+      msDone: myMs.filter(m => m['狀態'] === '已完成').length, msTotal: myMs.length,
+      msLate: myMs.filter(m => (m['完成日'] && m['完成日'] > m['目前期限']) || (!m['完成日'] && m['目前期限'] < today_())).length,
+      msReturns: myMs.reduce((a, m) => a + (+m['退回次數'] || 0), 0)
+    };
+  });
+  return { from, to, rows, rule: rule };
 }
 
 /* ========== 案件主檔：修改案件資料 ========== */

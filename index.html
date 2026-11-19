@@ -173,6 +173,7 @@ textarea{min-height:84px;resize:vertical}
 .chkr{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:13px;cursor:pointer}.chkr.bad{color:var(--bad)}.chkr small{color:var(--warn);font-size:11px}
 .cb{flex:0 0 20px;height:20px;border:1.5px solid var(--line);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px}.cb.on{background:var(--ok);border-color:var(--ok);color:#fff}
 .ck.on{background:var(--ok);border-color:var(--ok);color:#fff}
+.sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 6px;margin-top:10px}.sgrid div{background:#f7f4ef;border-radius:9px;padding:7px 8px;min-width:0}.sgrid span{display:block;font-size:11px;color:var(--muted)}.sgrid b{font-size:15px;font-weight:600}
 .spad{width:100%;height:170px;border:1.5px dashed var(--line);border-radius:12px;background:#fff;touch-action:none;display:block}
 .plist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .prow{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
@@ -265,6 +266,8 @@ const days = (a, b) => Math.round((dnum(a) - dnum(b)) / 86400000);
 const ME = () => S.home.me;
 const leader = () => !!ME().leader;
 const preview = () => !!ME().preview;
+/** 唯讀：預覽模式，或打開的案件已結案 */
+const ro = () => preview() || !!(S.cur && S.data && S.data.closed);
 const canCase = () => leader() || ME().role === '行政';
 
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
@@ -272,7 +275,7 @@ function busy(on, msg) { $('#loading').style.display = on ? 'flex' : 'none'; $('
 function sheet(html) { $('#sheet').innerHTML = '<button class="x" onclick="closeSheet()">✕</button><div class="grab"></div>' + html; $('#sheet').style.display = 'block'; $('#mask').style.display = 'block'; $('#sheet').scrollTop = 0; }
 function closeSheet() { $('#sheet').style.display = 'none'; $('#mask').style.display = 'none'; }
 $('#mask').onclick = closeSheet;
-function guard() { if (preview()) { toast('預覽模式只能看，不能存檔'); return true; } return false; }
+function guard() { if (preview()) { toast('預覽模式只能看，不能存檔'); return true; } if (ro()) { toast('案件已結案，資料唯讀'); return true; } return false; }
 
 const STAGE_CLS = { '洽談': 'c-mute', '提案': 'c-info', '設計': 'c-info', '開案前': 'c-warn', '施工': 'c-ok', '結案': 'c-mute' };
 const STAGES = ['洽談', '提案', '設計', '開案前', '施工', '結案'];
@@ -306,7 +309,7 @@ function renderHome() {
   const late = open.filter(i => i.kind === 'log' ? i.overdue : (i.due && days(i.due, h.today) < 0 && !(i.kind === 'ins' && i.status === '已回報' && i.mine)));
   const act = actSeen();
   const doneToday = h.items.filter(i => i.kind === 'todo' && i.done && String(i.doneAt).slice(0, 10) === h.today);
-  $('#top').innerHTML = `<div class="brand"><span>浩森設計工作管理系統</span><span>${leader() && !preview() ? '<a id="admin">⚙ 工種設定</a>　' : ''}<a id="logout">登出</a></span></div>
+  $('#top').innerHTML = `<div class="brand"><span>浩森設計工作管理系統</span><span>${me.seePerf && !preview() ? '<a id="stats">統計</a>　' : ''}${leader() && !preview() ? '<a id="admin">⚙ 工種設定</a>　' : ''}<a id="logout">登出</a></span></div>
     <h1 class="big">${esc(short(me.name))}工作總表</h1>
     <div class="sub"><span>${esc(md(h.today))}</span><b>還有 ${open.length} 件事沒做完</b>${late.length ? `<b class="bad">・${late.length} 件逾期</b>` : ''}</div>
     ${h.testMode && S.real && S.real.role === 'Boss' ? `<div class="pvwrap" id="pvwrap"><div class="pv" id="pvrow"><button data-as="" class="${!S.as ? 'on' : ''}">我的畫面</button>${h.people.filter(p => p.id !== S.real.id).map(p => `<button data-as="${p.id}" class="${S.as === p.id ? 'on' : ''}">看 ${esc(short(p.name))}</button>`).join('')}</div><div class="pvhint">左右滑動看其他人 ›</div></div>` : ''}
@@ -314,6 +317,7 @@ function renderHome() {
   $$('[data-as]').forEach(b => b.onclick = async () => { const old = S.as; S.as = b.dataset.as; busy(true, '切換中…'); try { await reloadHome(); renderHome(); } catch (e) { S.as = old; toast(e); } busy(false); });
   pvOverflow();
   if ($('#admin')) $('#admin').onclick = tradeAdmin;
+  if ($('#stats')) $('#stats').onclick = () => vStats();
   $('#logout').onclick = logout;
 
   const sorted = open.slice().sort((a, b) => (dnum(a.due) || 9e15) - (dnum(b.due) || 9e15));
@@ -402,6 +406,7 @@ function pvOverflow() {
 }
 window.addEventListener('resize', () => pvOverflow());
 function itemHTML(i) {
+  if (i.kind === 'wr') return `<div class="todo" data-gowr="${i.caseId}"><div class="ck lg">修</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・保固報修・${esc(md(i.created))}</div></div>${chip(i.status, REPAIR_CLS[i.status])}</div>`;
   if (i.kind === 'miss') return `<div class="todo" data-miss="${i.caseId}|${i.date}"><div class="ck lg">誌</div>
     <div style="flex:1"><div class="tt">日誌未填：${esc(i.caseName)} ${esc(md(i.date))}（${'日一二三四五六'[new Date(i.date.replace(/\//g, '-')).getDay()]}）</div><div class="s">補寫日誌，或登記當天無施工</div></div>${chip('漏填', 'c-bad')}</div>`;
   if (i.kind === 'ms' || i.kind === 'plan') {
@@ -450,6 +455,7 @@ function bindItems() {
   });
   $$('[data-goins]').forEach(e => e.onclick = () => openCase(e.dataset.goins, 'instr'));
   $$('[data-golog]').forEach(e => e.onclick = () => { const [c, l] = e.dataset.golog.split('|'); openCase(c, 'log', l); });
+  $$('[data-gowr]').forEach(e => e.onclick = () => openCase(e.dataset.gowr, 'sum'));
   $$('[data-miss]').forEach(e => e.onclick = () => { if (preview()) return; const [c, dd] = e.dataset.miss.split('|'); missSheet(c, dd); });
   $$('[data-goprog]').forEach(e => e.onclick = () => { const [c, k] = e.dataset.goprog.split('|'); S.ptab = k === 'ms' ? 'ms' : 'plan'; openCase(c, 'prog'); });
 }
@@ -491,7 +497,8 @@ function render() {
   const c = S.data.info, me = ME().id;
   $('#top').innerHTML = `<button class="back" id="backbtn">‹ 工作總表</button><h1>${esc(c['案件名稱'])}</h1>
     <div class="sub">${chip(c['階段'], STAGE_CLS[c['階段']])}<span>設計師 ${esc(pname(c['負責設計師']) || '未指定')}</span>${c['客戶姓名'] ? '<span>・' + esc(c['客戶姓名']) + '</span>' : ''}</div>
-    ${preview() ? `<div class="pvbar">預覽中：${esc(ME().name)} 的畫面（唯讀）</div>` : ''}`;
+    ${preview() ? `<div class="pvbar">預覽中：${esc(ME().name)} 的畫面（唯讀）</div>` : ''}
+    ${S.data.closed ? `<div class="pvbar">已結案：日誌、指示、進度、客戶紀錄唯讀${c['保固到期日'] ? '・保固到 ' + esc(c['保固到期日']) : ''}</div>` : ''}`;
   $('#backbtn').onclick = async () => { busy(true, '更新中…'); try { await reloadHome(); } catch (e) { } busy(false); renderHome(); };
   const nIns = S.data.ins.filter(i => (i.to === me && i.status === '待處理') || (i.from === me && i.status === '已回報')).length;
   const nLog = S.data.logs.filter(l => logNeedsMe(l)).length;
@@ -500,7 +507,7 @@ function render() {
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
   const fab = $('#fab'); fab.className = 'fab'; fab.style.display = 'none';
   ({ sum: vSum, log: vLog, instr: vInstr, client: vClient, prog: vProg, docs: vDocs })[S.tab]();
-  if (preview()) return;
+  if (ro()) return;
   if (S.tab === 'log') { fab.style.display = 'block'; fab.textContent = '＋ 新增日誌'; fab.onclick = () => logForm(null); }
   if (S.tab === 'instr' && leader()) { fab.style.display = 'block'; fab.textContent = '＋ 下指示'; fab.onclick = () => newIns(''); }
   if (S.tab === 'client') { fab.style.display = 'block'; fab.textContent = '＋ 記錄客戶指示'; fab.onclick = () => ciForm(null, ''); }
@@ -527,7 +534,7 @@ function vProg() {
   $$('[data-pt]').forEach(b => b.onclick = () => { S.ptab = b.dataset.pt; vProg(); });
 }
 function vPlan(tabs) {
-  const d = S.data, items = d.plan.filter(p => !p.cancelled), can = d.canPlan && !preview(), locked = !!d.planLocked;
+  const d = S.data, items = d.plan.filter(p => !p.cancelled), can = d.canPlan && !ro(), locked = !!d.planLocked;
   const lateLim = addDays(S.home.today, -(+(d.settings['延誤警告門檻（天）'] || 1)));
   S.popen = S.popen || {};
   const st = p => p.actEnd ? ['施工完成', 'c-ok'] : p.actStart ? ['進行中', 'c-info'] : ['未開始', 'c-mute'];
@@ -602,7 +609,7 @@ function checkForm(pid, cid) {
   };
 }
 function vSop(tabs) {
-  const d = S.data, can = d.canPlan && !preview();
+  const d = S.data, can = d.canPlan && !ro();
   let h = tabs + `<div class="card"><div class="t">開案前 SOP</div><div class="s">開工前要完成的準備事項。未完成不會擋住案件切換，只顯示提醒。</div>
     ${!d.sop.length && can ? '<div class="btns"><button class="btn sec sm" id="sopApply">帶入 SOP 清單（示範範本，待 Boss 確認）</button></div>' : ''}</div>`;
   h += d.sop.length ? `<div class="tl">` + d.sop.map(x => `<div class="todo" ${can ? `data-sop="${x.id}"` : ''}><div class="ck ${x.done ? 'on' : ''}">${x.done ? '✓' : ''}</div>
@@ -613,7 +620,7 @@ function vSop(tabs) {
   $$('[data-sop]').forEach(e => e.onclick = () => { const x = d.sop.find(y => y.id === e.dataset.sop); planAct('setSop', { id: x.id, done: !x.done }, x.done ? '已取消完成' : '已完成'); });
 }
 function vMs(tabs) {
-  const d = S.data, can = d.canPlan && !preview(), c = d.info, me = ME().id;
+  const d = S.data, can = d.canPlan && !ro(), c = d.info, me = ME().id;
   const hasP = d.ms.some(m => m.stage === '提案'), hasD = d.ms.some(m => m.stage === '設計');
   let h = tabs + `<div class="card"><div class="t">設計階段里程碑</div><div class="s">用「訂好日期」追蹤提案與設計進度。提案以提案日為基準、設計以設計約簽約日為基準。</div>
     ${can ? `<div class="btns" style="flex-wrap:wrap">${!hasP ? `<button class="btn sec sm" id="msP" ${c['提案日'] ? '' : 'disabled'}>帶入提案里程碑${c['提案日'] ? '' : '（先填提案日）'}</button>` : ''}${!hasD ? `<button class="btn sec sm" id="msD" ${c['設計約簽約日'] ? '' : 'disabled'}>帶入設計里程碑${c['設計約簽約日'] ? '' : '（先填設計約簽約日）'}</button>` : ''}<button class="btn ghost sm" id="msAdd">＋ 新增</button></div><div class="hint">範本是示範內容，待 Boss 確認。</div>` : ''}</div>`;
@@ -621,10 +628,10 @@ function vMs(tabs) {
     const g = d.ms.filter(m => stg ? m.stage === stg : !['提案', '設計'].includes(m.stage)); if (!g.length) return;
     h += `<div class="month">${stg || '其他'}・${g.filter(m => m.status === '已完成').length}/${g.length}</div><div class="tl">` + g.map(m => {
       const late = m.status !== '已完成' && m.due && m.due < S.home.today;
-      return `<div class="todo"><div class="ck ${m.status === '已完成' ? 'on' : ''}" ${!preview() && (m.owner === me || can) ? `data-msd="${m.id}"` : ''}>${m.status === '已完成' ? '✓' : ''}</div>
+      return `<div class="todo"><div class="ck ${m.status === '已完成' ? 'on' : ''}" ${!ro() && (m.owner === me || can) ? `data-msd="${m.id}"` : ''}>${m.status === '已完成' ? '✓' : ''}</div>
         <div style="flex:1;min-width:0" ${can ? `data-mse="${m.id}"` : ''}><div class="tt">${esc(m.name)}</div>
         <div class="s">${[esc(short(pname(m.owner)) || '未指定'), m.status === '已完成' ? esc(md(m.done)) + ' 完成' : (late ? `<span class="bad">期限 ${esc(md(m.due))}（逾期）</span>` : '期限 ' + esc(md(m.due))), m.base && m.base !== m.due ? '原定 ' + esc(md(m.base)) : '', m.returns ? `退回 ${m.returns} 次` : ''].filter(String).join('・')}</div></div>
-        ${leader() && !preview() && m.status === '已完成' ? `<button class="btn ghost sm" data-msr="${m.id}">退回</button>` : ''}</div>`;
+        ${leader() && !ro() && m.status === '已完成' ? `<button class="btn ghost sm" data-msr="${m.id}">退回</button>` : ''}</div>`;
     }).join('') + `</div>`;
   });
   if (!d.ms.length) h += '<div class="empty">還沒有里程碑</div>';
@@ -651,8 +658,9 @@ function msForm(m) {
     <div class="btns"><button class="btn pri" id="msgo">儲存</button></div>`);
   $('#msgo').onclick = () => { const name = $('#msn').value.trim(); if (!name) return toast('請填寫名稱'); planAct('saveMilestone', { caseId: S.cur, id: m ? m.id : '', name, owner: $('#mso').value, due: $('#msdue').value, reason: $('#msw') ? $('#msw').value.trim() : '', stage: S.data.info['階段'] }, '已儲存'); };
 }
+const CLOSED_OK = ['saveRepair', 'setStage', 'saveCaseInfo', 'saveTodo', 'setTodo', 'shareLog'];   // 結案後仍可做的事（與後端一致）
 async function planAct(action, payload, msg, ask) {
-  if (guard()) return;
+  if (CLOSED_OK.includes(action) ? preview() && guard() : guard()) return;
   if (ask && !confirm(ask)) return;
   busy(true, '處理中…');
   try { await API(action, payload); await refreshCase(); closeSheet(); render(); toast(msg); }
@@ -700,6 +708,64 @@ function doneForm(p) {
 }
 const today = () => { const d = new Date(); return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0'); };
 
+/* ===== 保固報修（結案後仍可新增與處理） ===== */
+const REPAIR_CLS = { '待處理': 'c-warn', '處理中': 'c-info', '已完成': 'c-ok' };
+function repairHTML() {
+  const r = S.data.repairs, c = S.data.info;
+  return `<h2>保固報修<small>${c['保固到期日'] ? '保固到 ' + esc(c['保固到期日']) : ''}</small>${!preview() ? '<span class="act" id="addRepair">＋ 報修</span>' : ''}</h2>
+    <div class="tl">${r.length ? r.map(x => `<div class="todo" ${!preview() ? `data-rep="${x.id}"` : ''}><div class="ck lg">修</div><div style="flex:1;min-width:0"><div class="tt">${esc(x.text)}</div>
+      <div class="s">${[esc(md(x.date)) + ' 報修', '負責 ' + esc(short(pname(x.owner)) || '未指定'), x.result ? '處理：' + esc(x.result) : '', x.done ? esc(md(x.done)) + ' 完成' : ''].filter(String).join('・')}</div></div>${chip(x.status, REPAIR_CLS[x.status])}</div>`).join('') : '<div class="empty">沒有報修紀錄</div>'}</div>`;
+}
+function bindRepairs() {
+  if ($('#addRepair')) $('#addRepair').onclick = () => repairForm(null);
+  $$('[data-rep]').forEach(e => e.onclick = () => repairForm(S.data.repairs.find(x => x.id === e.dataset.rep)));
+}
+function repairForm(x) {
+  if (preview()) return toast('預覽模式只能看，不能存檔');
+  const ppl = S.home.people;
+  sheet(`<h3>${x ? '處理報修' : '新增保固報修'}</h3>
+    ${x ? `<div class="s">${esc(x.text)}</div>` : `<label>報修日期</label><input type="date" id="rd" value="${toInput(today())}"><label>內容</label><textarea id="rt" placeholder="例如：主臥衣櫃門片下垂"></textarea>`}
+    <label>負責人</label><select id="ro">${ppl.map(p => `<option value="${p.id}" ${(x ? x.owner : S.data.info['負責設計師']) === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+    ${x ? `<label>狀態</label><div class="seg" id="rs">${['待處理', '處理中', '已完成'].map(o => `<button data-v="${o}" class="${x.status === o ? 'on' : ''}">${o}</button>`).join('')}</div>
+      <label>處理結果</label><textarea id="rr">${esc(x.result || '')}</textarea>` : ''}
+    <div class="btns"><button class="btn pri" id="rgo">儲存</button></div>`);
+  if (x) $$('#rs button').forEach(b => b.onclick = () => { $$('#rs button').forEach(o => o.classList.remove('on')); b.classList.add('on'); });
+  $('#rgo').onclick = () => {
+    if (!x && !$('#rt').value.trim()) return toast('請填寫報修內容');
+    const p = x ? { caseId: S.cur, id: x.id, owner: $('#ro').value, status: document.querySelector('#rs .on').dataset.v, result: $('#rr').value.trim() }
+      : { caseId: S.cur, date: $('#rd').value, text: $('#rt').value.trim(), owner: $('#ro').value };
+    planAct('saveRepair', p, '已儲存');
+  };
+}
+
+/* ===== 統計（可看績效者） ===== */
+async function vStats(range) {
+  S.statRange = range || S.statRange || 'month';
+  const t = S.home.today, y = +t.slice(0, 4), m = +t.slice(5, 7);
+  const pad = n => String(n).padStart(2, '0'), last = (yy, mm) => new Date(yy, mm, 0).getDate();
+  const R = { month: [`${y}/${pad(m)}/01`, t], prev: (() => { const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1; return [`${py}/${pad(pm)}/01`, `${py}/${pad(pm)}/${last(py, pm)}`]; })(), d30: [addDays(t, -29), t] }[S.statRange];
+  busy(true, '統計中…');
+  let r;
+  try { r = await API('stats', { from: R[0], to: R[1] }); } catch (e) { busy(false); return toast(e); }
+  busy(false);
+  S.cur = null;
+  $('#nav').style.display = 'none'; $('#fab').style.display = 'none';
+  $('#top').innerHTML = `<button class="back" id="backbtn">‹ 工作總表</button><h1>統計</h1><div class="sub"><span>${esc(r.from)}～${esc(r.to)}</span></div>`;
+  $('#backbtn').onclick = () => renderHome();
+  const cell = (v, bad) => `<b class="${bad ? 'bad' : ''}">${v}</b>`;
+  $('#main').innerHTML = `<div class="seg"><button data-sr="month" class="${S.statRange === 'month' ? 'on' : ''}">本月</button><button data-sr="prev" class="${S.statRange === 'prev' ? 'on' : ''}">上個月</button><button data-sr="d30" class="${S.statRange === 'd30' ? 'on' : ''}">近 30 天</button></div>
+    <div class="hint">漏填天數依目前「暫定」的日誌規則回推（週${esc(r.rule.days.join('、'))}，隔天 ${esc(r.rule.cut)} 前）。規則調整後數字會跟著變。</div>
+    ${r.rows.map(x => `<div class="card"><div class="t">${esc(x.name)}<small style="color:var(--muted);font-weight:400;margin-left:6px">${esc(x.role)}</small></div>
+      <div class="sgrid">
+        <div><span>日誌篇數</span>${cell(x.logs)}</div><div><span>補登篇數</span>${cell(x.lateLogs, x.lateLogs)}</div><div><span>負責案件漏填</span>${cell(x.missing + ' 天', x.missing)}</div>
+        <div><span>收到指示</span>${cell(x.insGot)}</div><div><span>逾期回報</span>${cell(x.insLate, x.insLate)}</div><div><span>被退回</span>${cell(x.insReturns, x.insReturns)}</div>
+        <div><span>簽核篇數</span>${cell(x.signed)}</div><div><span>平均簽核</span>${cell(x.signHrs === null ? '—' : x.signHrs + ' 小時')}</div><div><span>逾期簽核</span>${cell(x.signLate, x.signLate)}</div>
+        <div><span>里程碑完成</span>${cell(x.msDone + '/' + x.msTotal)}</div><div><span>里程碑逾期</span>${cell(x.msLate, x.msLate)}</div><div><span>里程碑退回</span>${cell(x.msReturns, x.msReturns)}</div>
+      </div></div>`).join('')}`;
+  $$('[data-sr]').forEach(b => b.onclick = () => vStats(b.dataset.sr));
+  window.scrollTo(0, 0);
+}
+
 function vSum() {
   const c = S.data.info, logs = S.data.logs, ins = S.data.ins, me = ME().id;
   const open = ins.filter(i => i.status !== '已結案');
@@ -712,12 +778,13 @@ function vSum() {
     <div class="kpi"><div class="n">${logs.length}</div><div class="l">日誌篇數</div></div>
     <div class="kpi ${open.length ? 'warn' : ''}"><div class="n">${open.length}</div><div class="l">未結指示</div></div>
   </div>
-  <h2>我在這個案件的待辦<small>${myTodos.length} 件</small>${preview() ? '' : '<span class="act" id="caseTodo">＋ 新增</span>'}</h2>
+  <h2>我在這個案件的待辦<small>${myTodos.length} 件</small>${ro() ? '' : '<span class="act" id="caseTodo">＋ 新增</span>'}</h2>
   <div class="tl">${myTodos.length ? myTodos.map(t => itemHTML({ kind: 'todo', id: t.id, text: t.text, due: t.due, done: t.done, from: t.from })).join('') : '<div class="empty">沒有</div>'}</div>
   <h2>最新日誌</h2>
   ${l ? `<div class="card tap" id="lastlog"><div class="t">${esc(md(l.date))}　${l.trades.map(t => `<span class="tchip" style="background:${tcolor(t)}">${esc(t)}</span>`).join(' ')}</div>
      <div class="s">${esc(pname(l.by))}｜${esc(l.text)}</div>${l.photos.length ? `<div class="s">📷 ${l.photos.length} 張照片</div>` : ''}</div>`
       : '<div class="card"><div class="empty" style="padding:8px">還沒有日誌</div></div>'}
+  ${S.data.closed || S.data.repairs.length ? repairHTML() : ''}
   <h2>案件資料${S.data.canEdit && !preview() ? '<span class="act" id="editCase">編輯</span>' : ''}</h2>
   <div class="card"><dl class="info">
     ${row('客戶', esc(c['客戶姓名']))}
@@ -731,7 +798,7 @@ function vSum() {
   <h2>重要日期</h2>
   <div class="card"><dl class="info">
     ${CASE_DATES.map(k => row(k, esc(c[k]))).join('')}
-    ${CASE_DATES.some(k => c[k]) ? '' : `<dt></dt><dd style="color:var(--muted)">尚未填寫${S.data.canEdit && !preview() ? '，按上方「編輯」補上' : ''}</dd>`}
+    ${CASE_DATES.some(k => c[k]) ? '' : `<dt></dt><dd style="color:var(--muted)">尚未填寫${S.data.canEdit && !ro() ? '，按上方「編輯」補上' : ''}</dd>`}
   </dl></div>
   <h2>其他</h2>
   <div class="card"><dl class="info">
@@ -742,16 +809,17 @@ function vSum() {
     ${c['最後修改時間'] ? row('最後修改', esc(short(pname(c['最後修改人']))) + ' ' + esc(String(c['最後修改時間']).slice(0, 16))) : ''}
   </dl></div>
   ${leader() && !preview() ? `<h2>案件階段</h2><div class="seg">${STAGES.map(s => `<button data-st="${s}" class="${c['階段'] === s ? 'on' : ''}">${s}</button>`).join('')}</div>` : ''}
-  ${preview() ? '' : `<div class="btns"><button class="btn pri" id="qaLog">＋ 寫日誌</button>${leader() ? '<button class="btn sec" id="qaIns">＋ 下指示</button>' : ''}</div>`}`;
+  ${ro() ? '' : `<div class="btns"><button class="btn pri" id="qaLog">＋ 寫日誌</button>${leader() ? '<button class="btn sec" id="qaIns">＋ 下指示</button>' : ''}</div>`}`;
   if (l) $('#lastlog').onclick = () => { S.tab = 'log'; S.open = { [l.id]: true }; render(); };
   if ($('#qaLog')) $('#qaLog').onclick = () => logForm(null);
   if ($('#qaIns')) $('#qaIns').onclick = () => newIns('');
   if ($('#caseTodo')) $('#caseTodo').onclick = () => newTodo(S.cur);
   if ($('#editCase')) $('#editCase').onclick = caseForm;
+  bindRepairs();
   bindItems();
   $$('[data-st]').forEach(b => b.onclick = async () => {
     if (b.dataset.st === c['階段']) return;
-    busy(true); try { await API('setStage', { id: S.cur, stage: b.dataset.st }); c['階段'] = b.dataset.st; render(); toast('階段已改為「' + b.dataset.st + '」'); } catch (e) { toast(e); } finally { busy(false); }
+    busy(true); try { await API('setStage', { id: S.cur, stage: b.dataset.st }); await refreshCase(); render(); toast('階段已改為「' + b.dataset.st + '」'); } catch (e) { toast(e); } finally { busy(false); }
   });
 }
 
@@ -781,7 +849,7 @@ function vLog() {
   $('#main').innerHTML = Object.keys(byMonth).map(m => `<div class="month">${m.replace('/', ' 年 ')} 月</div><div class="lgroup">` + byMonth[m].map(l => {
     const li = S.data.ins.filter(i => i.logId === l.id);
     const lateDays = l.created ? days(String(l.created).slice(0, 10), l.date) : 0;
-    const pv = preview(), btn = [];
+    const pv = ro(), btn = [];
     if (!pv) {
       if (l.status === '草稿' && (l.by === me || leader())) btn.push(`<button class="btn pri sm" data-lact="submitLog|${l.id}">送出</button>`);
       if (l.status === '待設計師確認' && (caseDesigner() === me || ME().role === 'Boss')) btn.push(`<button class="btn pri sm" data-lact="confirmLog|${l.id}">確認送簽核</button><button class="btn ghost sm" data-lret="${l.id}">退回</button>`);
@@ -843,7 +911,7 @@ async function logAct(action, id, text) {
   } catch (e) { toast(e); } finally { busy(false); }
 }
 function seeMinor(l) {
-  if (!l || !l.minor || l.signer !== ME().id || preview()) return;
+  if (!l || !l.minor || l.signer !== ME().id || ro()) return;
   l.minor = false; API('seenLog', { id: l.id }).catch(() => { });
 }
 /** 修改前後差異（字元層級） */
@@ -881,7 +949,7 @@ async function viewPdf(id) {
   busy(false);
   sheet(`<h3>查看 PDF</h3><div class="s">${esc(r.name)}<br>最後產生時間：${esc(r.at || '—')}</div>
     <div class="btns"><a class="btn pri" href="${esc(r.url)}" target="_blank" rel="noopener" style="text-align:center;text-decoration:none">開啟 PDF</a></div>
-    <div class="hint">這是已存檔的版本，不會重新產生。${preview() ? '預覽模式只能查看。' : '要用最新指示狀態更新並傳給客戶，請用「分享 PDF」。'}</div>`);
+    <div class="hint">這是已存檔的版本，不會重新產生。${ro() ? '預覽模式只能查看。' : '要用最新指示狀態更新並傳給客戶，請用「分享 PDF」。'}</div>`);
 }
 async function sharePdf(id) {
   busy(true, '產生 PDF 中…（約 10 秒）');
@@ -910,7 +978,7 @@ async function loadThumbs(l) {
 function insHTML(i) {
   const me = ME().id;
   let act = '';
-  if (!preview()) {
+  if (!ro()) {
     if (i.status === '待處理' && i.to === me) act = `<button class="btn ok sm" data-reply="${i.id}">回報結果</button>`;
     if (i.status === '已回報' && (i.from === me || S.real.role === 'Boss' && !S.as)) act = `<button class="btn ok sm" data-close="${i.id}">確認結案</button><button class="btn ghost sm" data-ret="${i.id}">退回</button>`;
   }
@@ -966,7 +1034,7 @@ const fmtMoney = v => v === '' || v == null ? '' : (Number(v) < 0 ? '−' : '') 
 const CI_CLS = { '待確認': 'c-warn', '已確認': 'c-ok', '客戶不同意': 'c-bad' };
 const canCI = x => leader() || S.data.info['負責設計師'] === ME().id || (x && x.by === ME().id);
 function ciHTML(x) {
-  const pv = preview();
+  const pv = ro();
   return `<div class="prow ${S.copen && S.copen[x.id] ? 'open' : ''}" data-cid="${x.id}">
     <div class="phead"><div class="pmain"><div class="pt">${esc(x.text)}</div>
       <div class="ps">${esc(md(x.date))}・${esc(x.source)}・${esc(short(pname(x.by)))} 記錄</div>
@@ -981,7 +1049,7 @@ function ciHTML(x) {
     </div></div>`;
 }
 function vClient() {
-  const d = S.data, pv = preview(), loose = d.cins.filter(x => !x.meetingId);
+  const d = S.data, pv = ro(), loose = d.cins.filter(x => !x.meetingId);
   S.copen = S.copen || {};
   const pending = d.cins.filter(x => x.status === '待確認').length;
   const imp = d.cins.filter(x => x.impact), sum = (l, k) => l.reduce((a, x) => a + (Number(x[k]) || 0), 0);
@@ -1108,7 +1176,7 @@ async function docShare(action, payload) {
 
 /* ===== 文件頁：所有 PDF 集中、週報與工程履歷 ===== */
 function vDocs() {
-  const d = S.data, can = d.canPlan && !preview();
+  const d = S.data, can = d.canPlan && !ro();
   const logDocs = d.logs.filter(l => l.hasPdf).map(l => ({ kind: 'log', id: l.id, name: '工程日誌 ' + md(l.date) + '（' + l.trades.join('、') + '）', type: '工程日誌', at: l.pdfAt || l.date }));
   const all = [...d.docs.map(x => Object.assign({ kind: 'doc' }, x)), ...logDocs].sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const types = ['全部', ...new Set(all.map(x => x.type))];
@@ -1228,7 +1296,7 @@ const toInput = v => String(v || '').slice(0, 10).replace(/\//g, '-');
 
 /** 修改案件資料（主管、行政、負責設計師；金額限可看金額者） */
 function caseForm() {
-  if (guard()) return;
+  if (preview()) return guard();
   const c = S.data.info, money = ME().seeMoney;
   const ds = S.home.people.filter(p => p.role === '設計師' || p.role === 'Boss' || p.role === '主管');
   const inp = (k, id, type, ph) => `<label>${k}</label><input id="${id}" ${type ? `type="${type}"` : ''} value="${esc(type === 'date' ? toInput(c[k]) : (c[k] || ''))}" ${ph ? `placeholder="${ph}"` : ''}>`;
