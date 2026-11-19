@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v4.0（客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
+ * 浩森設計工作管理系統｜後端 v4.1（查驗紀錄、SOP、里程碑；客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -100,7 +100,8 @@ function run_(email, action, payload) {
     saveCase: saveCase_, saveCaseInfo: saveCaseInfo_, setStage: setStage_, saveTrade: saveTrade_,
     savePlanItem: savePlanItem_, cancelPlanItem: cancelPlanItem_, applyTemplate: applyTemplate_, lockPlan: lockPlan_,
     setActualStart: setActualStart_, setDone: setDone_,
-    saveMeeting: saveMeeting_, reviewMeeting: reviewMeeting_, saveClientIns: saveClientIns_, confirmClientIns: confirmClientIns_
+    saveMeeting: saveMeeting_, reviewMeeting: reviewMeeting_, saveClientIns: saveClientIns_, confirmClientIns: confirmClientIns_,
+    saveCheck: saveCheck_, applySop: applySop_, setSop: setSop_, applyMilestones: applyMilestones_, saveMilestone: saveMilestone_, setMilestone: setMilestone_
   };
   if (READ[action]) return READ[action](me, payload);
   if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); return SLOW[action](me, payload); }
@@ -307,6 +308,20 @@ function getHome_(me) {
     if (st === LS.SIGNED && designer === me.id && !(+l['分享次數'])) add('send');
     if (st === LS.SIGNED && l['小修待看'] === 'Y' && signer === me.id) add('minor');
   });
+  // 設計階段里程碑：交給我、未完成的（期限 7 天內或已逾期）
+  const soon = fmt_(new Date(Date.now() + 7 * 864e5), 'yyyy/MM/dd');
+  tryTable_('里程碑').filter(x => x['負責人'] === me.id && x['狀態'] !== '已完成' && x['目前期限'] && x['目前期限'] <= soon).forEach(x => items.push({
+    kind: 'ms', id: x['任務ID'], caseId: x['案件ID'], caseName: cname(x['案件ID']), text: x['名稱'], due: x['目前期限'], status: '未完成', created: x['原定日期']
+  }));
+  // 工序超過計畫日期（只提醒負責設計師，不需任何批准）
+  const lateDays = +setting_('延誤警告門檻（天）', 1) || 0, lim = fmt_(new Date(Date.now() - lateDays * 864e5), 'yyyy/MM/dd');
+  tryTable_('進度計畫').filter(r => r['狀態'] !== '取消').forEach(r => {
+    const c = caseRows.find(x => x['案件ID'] === r['案件ID']);
+    if (!c || c['負責設計師'] !== me.id) return;
+    const lateEnd = r['目前計畫完成'] && r['目前計畫完成'] < lim && !r['實際完成'], lateStart = r['目前計畫開始'] && r['目前計畫開始'] < lim && !r['實際開始'];
+    if (lateEnd || lateStart) items.push({ kind: 'plan', id: r['工序ID'], caseId: r['案件ID'], caseName: cname(r['案件ID']), text: r['工序名稱'],
+      due: lateEnd ? r['目前計畫完成'] : r['目前計畫開始'], status: lateEnd ? '超過計畫完成日' : '超過計畫開始日', created: r['目前計畫開始'] });
+  });
   // 主管的現場總覽：施工中與開案前案件的最新日誌、照片、問題、指示與進度差異（只讀、不設任何批准）
   let overview = [], tracking = [];
   if (me.leader) {
@@ -390,7 +405,19 @@ function getCase_(me, p) {
     method: x['確認方式'], sign: x['客戶簽名'], shot: x['確認截圖'], confirmedAt: x['確認時間'], note: x['確認備註'],
     by: x['記錄人'], created: x['建立時間'], locked: x['鎖定'] === 'Y'
   })).sort((a, b) => ((b.date || '') + b.created).localeCompare((a.date || '') + a.created));
-  return { info: c, canEdit: canEditCase_(me, c), canPlan: canPlan_(me, c), logs, ins, todos, plan, planLog, meetings, cins,
+  const checks = tryTable_('查驗紀錄').filter(x => x['案件ID'] === p.id).map(x => ({
+    id: x['紀錄ID'], item: x['工序ID'], point: x['查驗點'], checkId: x['檢查ID'], label: x['檢查項目'], photo: x['照片'], done: x['完成'] === 'Y',
+    status: x['狀態'], note: x['備註'], by: x['檢查人'], at: x['檢查時間']
+  }));
+  const checkTpl = tryTable_('範本_查驗清單').map(t => ({ id: t['檢查ID'], point: t['查驗點'], order: +t['順序'] || 0, label: t['檢查項目'], photo: t['需拍照'] === 'Y' }));
+  const sop = tryTable_('案件SOP').filter(x => x['案件ID'] === p.id).map(x => ({ id: x['ID'], tpl: x['項目ID'], label: x['項目'], done: x['完成'] === 'Y', date: x['完成日'], by: x['完成人'], note: x['備註'], role: x['負責角色'], order: +x['順序'] || 0 }))
+    .sort((a, b) => a.order - b.order);
+  const ms = tryTable_('里程碑').filter(x => x['案件ID'] === p.id).map(x => ({
+    id: x['任務ID'], stage: x['階段'], name: x['名稱'], owner: x['負責人'], base: x['原定日期'], due: x['目前期限'], done: x['完成日'],
+    status: x['狀態'], returns: +x['退回次數'] || 0, why: x['改期原因'], note: x['備註'], order: +x['順序'] || 0
+  })).sort((a, b) => (a.due || '9').localeCompare(b.due || '9') || a.order - b.order);
+  return { info: c, canEdit: canEditCase_(me, c), canPlan: canPlan_(me, c), logs, ins, todos, plan, planLog, meetings, cins, checks, checkTpl, sop, ms,
+    settings: settings_(),
     planLocked: c['進度定案時間'] || '', planLockedBy: c['進度定案人'] || '' };
 }
 
@@ -998,6 +1025,91 @@ function confirmClientIns_(me, d) {
     '確認狀態': status, '確認方式': d.method, '客戶簽名': saveImage_(d.sign, 'png', '簽名'), '確認截圖': saveImage_(d.shot, 'jpg', '截圖'),
     '確認時間': now_(), '確認備註': d.note || '', '鎖定': 'Y', '最後修改人': me.id, '最後修改時間': now_()
   });
+  return true;
+}
+
+/* ========== 公司設定（可調整的規則參數） ========== */
+let _settings;
+function settings_() {
+  if (_settings) return _settings;
+  const o = {};
+  tryTable_('公司設定').forEach(r => { if (r['項目']) o[r['項目']] = r['值']; });
+  return (_settings = o);
+}
+function setting_(k, dflt) { const v = settings_()[k]; return v === undefined || v === '' ? dflt : v; }
+
+/* ========== 進度頁補完：查驗紀錄、開案前 SOP、設計階段里程碑 ==========
+ * 依 Boss 11/19 方向：查驗是「記錄與提醒」，不擋施工、不需主管逐項放行；有問題就照常下指示處理。
+ * 暫定：負責設計師與主管可以記錄查驗、勾 SOP、維護里程碑（canPlan_）。
+ */
+function saveCheck_(me, d) {
+  const it = planItem_(d.itemId), c = planGuard_(me, it['案件ID']);
+  const all = tryTable_('查驗紀錄'), cur = all.find(x => x['工序ID'] === d.itemId && x['檢查ID'] === d.checkId);
+  const tpl = tryTable_('範本_查驗清單').find(t => t['檢查ID'] === d.checkId) || {};
+  const status = d.status === '有問題' ? '有問題' : '正常';
+  if (status === '有問題' && !String(d.note || '').trim()) throw new Error('有問題請寫明狀況');
+  const row = { '完成': d.done ? 'Y' : '', '狀態': d.done ? status : '', '備註': d.note || '', '檢查人': me.id, '檢查時間': now_() };
+  if (d.photo) row['照片'] = saveImage_(d.photo, 'jpg', '查驗');
+  if (cur) updateRow_('查驗紀錄', '紀錄ID', cur['紀錄ID'], row);
+  else appendRow_('查驗紀錄', Object.assign({ '紀錄ID': uid_(), '案件ID': c['案件ID'], '工序ID': d.itemId, '查驗點': it['查驗點'], '檢查ID': d.checkId, '檢查項目': tpl['檢查項目'] || d.label || '' }, row));
+  return true;
+}
+
+function applySop_(me, d) {
+  const c = planGuard_(me, d.caseId);
+  if (tryTable_('案件SOP').some(x => x['案件ID'] === d.caseId)) throw new Error('這個案件已經有 SOP 清單');
+  const tpl = tryTable_('範本_開案SOP').filter(t => t['啟用'] !== 'N' && t['項目']).sort((a, b) => (+a['順序'] || 0) - (+b['順序'] || 0));
+  tpl.forEach(t => appendRow_('案件SOP', { 'ID': uid_(), '案件ID': c['案件ID'], '項目ID': t['項目ID'], '項目': t['項目'], '順序': t['順序'], '負責角色': t['負責角色'] || '', '說明': t['說明'] || '' }));
+  return tpl.length;
+}
+function setSop_(me, d) {
+  const x = rowObj_(findRow_('案件SOP', 'ID', d.id)); planGuard_(me, x['案件ID']);
+  updateRow_('案件SOP', 'ID', d.id, d.done ? { '完成': 'Y', '完成日': ymd_(d.date) || today_(), '完成人': me.id, '備註': d.note || x['備註'] || '' } : { '完成': '', '完成日': '', '完成人': '', '備註': d.note || x['備註'] || '' });
+  return true;
+}
+
+/** 帶入設計階段里程碑範本：提案階段以提案日為 0、設計階段以設計約簽約日為 0（日曆天） */
+function applyMilestones_(me, d) {
+  const c = planGuard_(me, d.caseId), stage = d.stage === '設計' ? '設計' : '提案';
+  const base = stage === '提案' ? c['提案日'] : c['設計約簽約日'];
+  if (!base) throw new Error('請先在案件資料填寫' + (stage === '提案' ? '提案日' : '設計約簽約日'));
+  if (tryTable_('里程碑').some(x => x['案件ID'] === d.caseId && x['階段'] === stage)) throw new Error('這個案件已經有「' + stage + '」里程碑');
+  const tpl = tryTable_('範本_里程碑').filter(t => t['階段'] === stage && t['名稱']).sort((a, b) => (+a['順序'] || 0) - (+b['順序'] || 0));
+  const bossId = bossId_(), b = base.split('/').map(Number);
+  tpl.forEach(t => {
+    const dt = new Date(Date.UTC(b[0], b[1] - 1, b[2]) + (+t['相對天數'] || 0) * 864e5), z = x => (x < 10 ? '0' : '') + x;
+    const due = dt.getUTCFullYear() + '/' + z(dt.getUTCMonth() + 1) + '/' + z(dt.getUTCDate());
+    appendRow_('里程碑', { '任務ID': uid_(), '案件ID': d.caseId, '階段': stage, '名稱': t['名稱'], '順序': t['順序'],
+      '負責人': t['負責角色'] === 'Boss' ? bossId : (c['負責設計師'] || ''), '原定日期': due, '目前期限': due, '狀態': '未完成', '退回次數': 0 });
+  });
+  return tpl.length;
+}
+function saveMilestone_(me, d) {
+  const c = planGuard_(me, d.caseId), due = ymd_(d.due), why = String(d.reason || '').trim();
+  if (!String(d.name || '').trim()) throw new Error('請填寫名稱');
+  if (!d.id) {
+    appendRow_('里程碑', { '任務ID': uid_(), '案件ID': d.caseId, '階段': d.stage || c['階段'] || '', '名稱': String(d.name).trim(), '負責人': d.owner || '',
+      '原定日期': due, '目前期限': due, '狀態': '未完成', '退回次數': 0 });
+    return true;
+  }
+  const x = rowObj_(findRow_('里程碑', '任務ID', d.id));
+  if (x['目前期限'] && due !== x['目前期限'] && !why) throw new Error('改期請填寫原因');
+  updateRow_('里程碑', '任務ID', d.id, { '名稱': String(d.name).trim(), '負責人': d.owner || '', '目前期限': due,
+    '改期原因': due !== x['目前期限'] ? (x['改期原因'] ? x['改期原因'] + '\n' : '') + today_() + ' ' + x['目前期限'] + '→' + due + '：' + why : x['改期原因'] });
+  return true;
+}
+/** 完成／取消完成／退回（退回只限主管，計入退回次數） */
+function setMilestone_(me, d) {
+  const x = rowObj_(findRow_('里程碑', '任務ID', d.id)), c = caseRow_(x['案件ID']);
+  const mine = x['負責人'] === me.id;
+  if (d.act === 'return') {
+    if (!me.leader) throw new Error('只有主管可以退回');
+    updateRow_('里程碑', '任務ID', d.id, { '狀態': '未完成', '完成日': '', '退回次數': (+x['退回次數'] || 0) + 1,
+      '備註': (x['備註'] ? x['備註'] + '\n' : '') + today_() + ' 退回（' + pname_(me.id) + '）：' + (d.reason || '') });
+    return true;
+  }
+  if (!mine && !canPlan_(me, c)) throw new Error('只有負責人、負責設計師或主管可以更新');
+  updateRow_('里程碑', '任務ID', d.id, d.act === 'done' ? { '狀態': '已完成', '完成日': today_() } : { '狀態': '未完成', '完成日': '' });
   return true;
 }
 

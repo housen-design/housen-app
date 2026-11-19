@@ -168,6 +168,11 @@ textarea{min-height:84px;resize:vertical}
 .ov .ovlog{margin-top:10px;font-size:13.5px;line-height:1.6;overflow-wrap:anywhere}.ov .ovst{font-size:11px;color:var(--warn)}
 .ov .ovph{display:flex;gap:6px;margin-top:8px;align-items:center}.ov .ovph span{width:64px;height:48px;border-radius:7px;overflow:hidden;background:#ece6de;display:block}.ov .ovph img{width:100%;height:100%;object-fit:cover}.ov .ovph em{font-style:normal;font-size:12px;color:var(--muted)}
 .ov .issue{margin-top:8px}
+.ptabs{margin-bottom:12px}.ptabs button{font-size:12.5px;padding:9px 4px}
+.chk{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}.chkh{font-size:12px;color:var(--muted);margin-bottom:4px}
+.chkr{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:13px;cursor:pointer}.chkr.bad{color:var(--bad)}.chkr small{color:var(--warn);font-size:11px}
+.cb{flex:0 0 20px;height:20px;border:1.5px solid var(--line);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px}.cb.on{background:var(--ok);border-color:var(--ok);color:#fff}
+.ck.on{background:var(--ok);border-color:var(--ok);color:#fff}
 .spad{width:100%;height:170px;border:1.5px dashed var(--line);border-radius:12px;background:#fff;touch-action:none;display:block}
 .plist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .prow{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
@@ -294,7 +299,7 @@ function dueTxt(due, done) {
 }
 
 function renderHome() {
-  S.cur = null; S.data = null; closeSheet();
+  S.cur = null; S.data = null; S.ptab = null; closeSheet();
   const h = S.home, me = h.me;
   $('#nav').style.display = 'none';
   const open = h.items.filter(i => i.kind === 'ins' ? true : !i.done);
@@ -396,6 +401,11 @@ function pvOverflow() {
 }
 window.addEventListener('resize', () => pvOverflow());
 function itemHTML(i) {
+  if (i.kind === 'ms' || i.kind === 'plan') {
+    const late = i.kind === 'plan' || (i.due && days(i.due, S.home.today) < 0);
+    return `<div class="todo" data-goprog="${i.caseId}|${i.kind}"><div class="ck lg">${i.kind === 'ms' ? '程' : '工'}</div>
+      <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[esc(i.caseName), i.kind === 'ms' ? '設計里程碑・' + dueTxt(i.due) : esc(i.status) + '（' + esc(md(i.due)) + '）'].join('・')}</div></div>${chip(i.kind === 'ms' ? (late ? '逾期' : '里程碑') : '進度落後', late ? 'c-bad' : 'c-info')}</div>`;
+  }
   if (i.kind === 'log') {
     const [verb, tag, cls] = LOG_TASK[i.status] || ['日誌', i.status, 'c-mute'];
     const sub = [esc(i.caseName), esc(md(i.date)) + ' 日誌', i.by !== ME().id ? esc(short(pname(i.by))) + ' 填寫' : '',
@@ -424,6 +434,7 @@ function bindItems() {
   });
   $$('[data-goins]').forEach(e => e.onclick = () => openCase(e.dataset.goins, 'instr'));
   $$('[data-golog]').forEach(e => e.onclick = () => { const [c, l] = e.dataset.golog.split('|'); openCase(c, 'log', l); });
+  $$('[data-goprog]').forEach(e => e.onclick = () => { const [c, k] = e.dataset.goprog.split('|'); S.ptab = k === 'ms' ? 'ms' : 'plan'; openCase(c, 'prog'); });
 }
 
 function newTodo(caseId) {
@@ -491,10 +502,19 @@ function logHint(item) {
 }
 function addDays(ymd, n) { const d = new Date(String(ymd).replace(/\//g, '-') + 'T00:00:00'); d.setDate(d.getDate() + n); return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0'); }
 function vProg() {
+  const st = S.data.info['階段'];
+  S.ptab = S.ptab || (['洽談', '提案', '設計'].includes(st) ? 'ms' : 'plan');
+  const d = S.data, sopLeft = d.sop.filter(x => !x.done).length, msLate = d.ms.filter(m => m.status !== '已完成' && m.due && m.due < S.home.today).length;
+  const tabs = `<div class="seg ptabs"><button data-pt="plan" class="${S.ptab === 'plan' ? 'on' : ''}">工程進度</button><button data-pt="sop" class="${S.ptab === 'sop' ? 'on' : ''}">開案前 SOP${sopLeft ? `（${sopLeft}）` : ''}</button><button data-pt="ms" class="${S.ptab === 'ms' ? 'on' : ''}">設計里程碑${msLate ? `（逾期 ${msLate}）` : ''}</button></div>`;
+  if (S.ptab === 'sop') vSop(tabs); else if (S.ptab === 'ms') vMs(tabs); else vPlan(tabs);
+  $$('[data-pt]').forEach(b => b.onclick = () => { S.ptab = b.dataset.pt; vProg(); });
+}
+function vPlan(tabs) {
   const d = S.data, items = d.plan.filter(p => !p.cancelled), can = d.canPlan && !preview(), locked = !!d.planLocked;
+  const lateLim = addDays(S.home.today, -(+(d.settings['延誤警告門檻（天）'] || 1)));
   S.popen = S.popen || {};
   const st = p => p.actEnd ? ['施工完成', 'c-ok'] : p.actStart ? ['進行中', 'c-info'] : ['未開始', 'c-mute'];
-  let h = `<div class="card"><div class="t">${locked ? '進度計畫已定案' : '進度計畫草擬中'}</div>
+  let h = tabs + `<div class="card"><div class="t">${locked ? '進度計畫已定案' : '進度計畫草擬中'}</div>
     <div class="s">${locked ? `${esc(short(pname(d.planLockedBy)))} 於 ${esc(String(d.planLocked).slice(0, 16))} 定案。之後改期只改「目前計畫」並須填原因，原計畫保留作比對。` : '日期可直接調整；主管「定案」後，原計畫會固定下來，之後改期要填原因。'}</div>
     <div class="lst mute">進度計畫用來比對預計與實際的差異，不需要主管逐項批准；現場由負責人推進。</div>
     ${can ? `<div class="btns" style="flex-wrap:wrap">${!items.length ? '<button class="btn sec sm" id="ptpl">套用工序範本（示範）</button>' : ''}<button class="btn ghost sm" id="padd">＋ 新增工序</button>${leader() && !locked && items.length ? '<button class="btn pri sm" id="plock">定案</button>' : ''}</div>` : ''}</div>`;
@@ -502,11 +522,17 @@ function vProg() {
   h += `<div class="plist">` + items.map((p, i) => {
     const [stt, cls] = st(p), hint = !p.actStart ? logHint(p) : '', moved = locked && (p.baseStart !== p.start || p.baseEnd !== p.end);
     const hist = d.planLog.filter(x => x.item === p.id);
+    const lateE = p.end && p.end < lateLim && !p.actEnd, lateS = p.start && p.start < lateLim && !p.actStart;
+    const tpl = p.check ? d.checkTpl.filter(t => t.point === p.check).sort((a, b) => a.order - b.order) : [];
+    const recs = d.checks.filter(x => x.item === p.id);
+    const chkRows = tpl.map(t => ({ t, r: recs.find(x => x.checkId === t.id) }));
+    const chkDone = chkRows.filter(x => x.r && x.r.done).length, chkBad = recs.filter(x => x.status === '有問題').length;
     return `<div class="prow ${S.popen[p.id] ? 'open' : ''}" data-pid="${p.id}">
       <div class="phead"><span class="pno">${i + 1}</span><div class="pmain"><div class="pt">${p.trade ? `<span class="tchip" style="background:${tcolor(p.trade)}">${esc(p.trade)}</span> ` : ''}${esc(p.name)}</div>
         <div class="ps">計畫 ${range(p.start, p.end)}${moved ? `<span class="pold">原 ${range(p.baseStart, p.baseEnd)}</span>` : ''}</div>
         <div class="ps">實際 ${p.actStart ? ymdShort(p.actStart) + ' 開始' : '—'}${p.actEnd ? '・' + ymdShort(p.actEnd) + ' 完成' : ''}</div>
-        ${p.check ? `<div class="ps pchk">查驗點：${esc(p.check)}（記錄用，做法待定）</div>` : ''}
+        ${lateE ? `<div class="ps bad">超過計畫完成日 ${-days(p.end, S.home.today)} 天</div>` : lateS ? `<div class="ps bad">超過計畫開始日 ${-days(p.start, S.home.today)} 天，尚未開始</div>` : ''}
+        ${p.check ? `<div class="ps pchk">查驗：${esc(p.check)}・已檢查 ${chkDone}/${tpl.length}${chkBad ? `・<b class="bad">有問題 ${chkBad}</b>` : ''}</div>` : ''}
         ${hint ? `<div class="phint">日誌參考：${ymdShort(hint)} 有「${esc(p.trade)}」日誌${can ? '，請確認是否為實際開始日' : ''}</div>` : ''}
       </div>${chip(stt, cls)}</div>
       <div class="pbody">
@@ -516,6 +542,9 @@ function vProg() {
           ${p.actStart ? `<button class="btn ${p.actEnd ? 'ghost' : 'ok'} sm" data-pdone="${p.id}">${p.actEnd ? '更正／撤回完成' : '施工完成'}</button>` : ''}
           ${!p.actStart ? `<button class="btn ghost sm" data-pcancel="${p.id}">取消工序</button>` : ''}</div>` : ''}
         ${p.actStart ? `<div class="s">實際開始由 ${esc(short(pname(p.actStartBy)))} 確認${p.actEnd ? `；施工完成由 ${esc(short(pname(p.actEndBy)))} 確認` : ''}</div>` : ''}
+        ${tpl.length ? `<div class="chk"><div class="chkh">查驗紀錄（記錄用，不擋施工）</div>${chkRows.map(({ t, r }) => `<div class="chkr ${r && r.status === '有問題' ? 'bad' : ''}" ${can ? `data-chk="${p.id}|${t.id}"` : ''}>
+          <span class="cb ${r && r.done ? 'on' : ''}">${r && r.done ? '✓' : ''}</span><div style="flex:1;min-width:0"><div>${esc(t.label)}${t.photo ? ' <small>需拍照</small>' : ''}</div>
+          ${r && r.done ? `<div class="s">${esc(r.status)}・${esc(short(pname(r.by)))} ${esc(String(r.at).slice(5, 16))}${r.note ? '・' + esc(r.note) : ''}${r.photo ? '・有照片' : ''}</div>` : ''}</div></div>`).join('')}</div>` : ''}
         ${hist.length ? `<div class="phist">${hist.map(x => `<div>${esc(String(x.at).slice(5, 16))} ${esc(short(pname(x.by)))}｜${esc(x.what)}${x.from || x.to ? `：${esc(x.from || '—')} → ${esc(x.to || '—')}` : ''}${x.why ? `<br><span>原因：${esc(x.why)}</span>` : ''}</div>`).join('')}</div>` : ''}
       </div></div>`;
   }).join('') + `</div>`;
@@ -530,10 +559,80 @@ function vProg() {
   $$('[data-pedit]').forEach(b => b.onclick = () => planForm(find(b.dataset.pedit)));
   $$('[data-pstart]').forEach(b => b.onclick = () => startForm(find(b.dataset.pstart)));
   $$('[data-pdone]').forEach(b => b.onclick = () => doneForm(find(b.dataset.pdone)));
+  $$('[data-chk]').forEach(b => b.onclick = () => { const [pid, cid] = b.dataset.chk.split('|'); checkForm(pid, cid); });
   $$('[data-pcancel]').forEach(b => b.onclick = () => {
     sheet(`<h3>取消工序</h3><div class="s">不會刪除，會保留在異動紀錄。</div>${locked ? '<label>原因（必填）</label>' : '<label>原因</label>'}<textarea id="pwhy"></textarea><div class="btns"><button class="btn pri" id="pgo">取消這個工序</button></div>`);
     $('#pgo').onclick = () => planAct('cancelPlanItem', { id: b.dataset.pcancel, reason: $('#pwhy').value.trim() }, '已取消工序');
   });
+}
+function checkForm(pid, cid) {
+  if (guard()) return;
+  const t = S.data.checkTpl.find(x => x.id === cid), r = S.data.checks.find(x => x.item === pid && x.checkId === cid) || {};
+  let photo = '';
+  sheet(`<h3>查驗紀錄</h3><div class="s">${esc(t.label)}</div>
+    <label>結果</label><div class="seg" id="kst"><button data-v="正常" class="${r.status !== '有問題' ? 'on' : ''}">正常</button><button data-v="有問題" class="${r.status === '有問題' ? 'on' : ''}">有問題</button><button data-v="未檢查">尚未檢查</button></div>
+    <label>照片${t.photo ? '（這項需拍照）' : ''}</label><input type="file" id="kph" accept="image/jpeg,image/png,image/heic,image/heif,image/webp" capture="environment"><div class="s" id="kphs">${r.photo ? '已有照片，重新選會取代' : ''}</div>
+    <label>說明</label><textarea id="knote" placeholder="有問題時請寫明狀況，例如：保壓 30 分鐘後壓力下降">${esc(r.note || '')}</textarea>
+    <div class="hint">查驗是記錄，不會擋住下一個工序；有問題請照常下指示或寫進日誌處理。</div>
+    <div class="btns"><button class="btn pri" id="kgo">儲存</button></div>`);
+  $$('#kst button').forEach(b => b.onclick = () => { $$('#kst button').forEach(o => o.classList.remove('on')); b.classList.add('on'); });
+  $('#kph').onchange = async () => { const f = $('#kph').files[0]; if (!f) return; $('#kphs').textContent = '處理中…'; try { photo = await shrink(f); $('#kphs').textContent = '已附上照片'; } catch (e) { $('#kphs').textContent = '無法讀取這張圖'; } };
+  $('#kgo').onclick = () => {
+    const v = document.querySelector('#kst .on').dataset.v;
+    if (v === '有問題' && !$('#knote').value.trim()) return toast('有問題請寫明狀況');
+    if (v !== '未檢查' && t.photo && !photo && !r.photo) return toast('這項需要拍照');
+    planAct('saveCheck', { itemId: pid, checkId: cid, done: v !== '未檢查', status: v, note: $('#knote').value.trim(), photo }, '已記錄查驗');
+  };
+}
+function vSop(tabs) {
+  const d = S.data, can = d.canPlan && !preview();
+  let h = tabs + `<div class="card"><div class="t">開案前 SOP</div><div class="s">開工前要完成的準備事項。未完成不會擋住案件切換，只顯示提醒。</div>
+    ${!d.sop.length && can ? '<div class="btns"><button class="btn sec sm" id="sopApply">帶入 SOP 清單（示範範本，待 Boss 確認）</button></div>' : ''}</div>`;
+  h += d.sop.length ? `<div class="tl">` + d.sop.map(x => `<div class="todo" ${can ? `data-sop="${x.id}"` : ''}><div class="ck ${x.done ? 'on' : ''}">${x.done ? '✓' : ''}</div>
+    <div style="flex:1;min-width:0"><div class="tt">${esc(x.label)}</div><div class="s">${[x.role ? '建議由 ' + esc(x.role) : '', x.done ? esc(short(pname(x.by))) + ' ' + esc(md(x.date)) + ' 完成' : '', x.note ? esc(x.note) : ''].filter(String).join('・')}</div></div></div>`).join('') + `</div>`
+    : '<div class="empty">還沒有 SOP 清單</div>';
+  $('#main').innerHTML = h;
+  if ($('#sopApply')) $('#sopApply').onclick = () => planAct('applySop', { caseId: S.cur }, '已帶入 SOP 清單（示範內容）');
+  $$('[data-sop]').forEach(e => e.onclick = () => { const x = d.sop.find(y => y.id === e.dataset.sop); planAct('setSop', { id: x.id, done: !x.done }, x.done ? '已取消完成' : '已完成'); });
+}
+function vMs(tabs) {
+  const d = S.data, can = d.canPlan && !preview(), c = d.info, me = ME().id;
+  const hasP = d.ms.some(m => m.stage === '提案'), hasD = d.ms.some(m => m.stage === '設計');
+  let h = tabs + `<div class="card"><div class="t">設計階段里程碑</div><div class="s">用「訂好日期」追蹤提案與設計進度。提案以提案日為基準、設計以設計約簽約日為基準。</div>
+    ${can ? `<div class="btns" style="flex-wrap:wrap">${!hasP ? `<button class="btn sec sm" id="msP" ${c['提案日'] ? '' : 'disabled'}>帶入提案里程碑${c['提案日'] ? '' : '（先填提案日）'}</button>` : ''}${!hasD ? `<button class="btn sec sm" id="msD" ${c['設計約簽約日'] ? '' : 'disabled'}>帶入設計里程碑${c['設計約簽約日'] ? '' : '（先填設計約簽約日）'}</button>` : ''}<button class="btn ghost sm" id="msAdd">＋ 新增</button></div><div class="hint">範本是示範內容，待 Boss 確認。</div>` : ''}</div>`;
+  ['提案', '設計', ''].forEach(stg => {
+    const g = d.ms.filter(m => stg ? m.stage === stg : !['提案', '設計'].includes(m.stage)); if (!g.length) return;
+    h += `<div class="month">${stg || '其他'}・${g.filter(m => m.status === '已完成').length}/${g.length}</div><div class="tl">` + g.map(m => {
+      const late = m.status !== '已完成' && m.due && m.due < S.home.today;
+      return `<div class="todo"><div class="ck ${m.status === '已完成' ? 'on' : ''}" ${!preview() && (m.owner === me || can) ? `data-msd="${m.id}"` : ''}>${m.status === '已完成' ? '✓' : ''}</div>
+        <div style="flex:1;min-width:0" ${can ? `data-mse="${m.id}"` : ''}><div class="tt">${esc(m.name)}</div>
+        <div class="s">${[esc(short(pname(m.owner)) || '未指定'), m.status === '已完成' ? esc(md(m.done)) + ' 完成' : (late ? `<span class="bad">期限 ${esc(md(m.due))}（逾期）</span>` : '期限 ' + esc(md(m.due))), m.base && m.base !== m.due ? '原定 ' + esc(md(m.base)) : '', m.returns ? `退回 ${m.returns} 次` : ''].filter(String).join('・')}</div></div>
+        ${leader() && !preview() && m.status === '已完成' ? `<button class="btn ghost sm" data-msr="${m.id}">退回</button>` : ''}</div>`;
+    }).join('') + `</div>`;
+  });
+  if (!d.ms.length) h += '<div class="empty">還沒有里程碑</div>';
+  $('#main').innerHTML = h;
+  if ($('#msP')) $('#msP').onclick = () => planAct('applyMilestones', { caseId: S.cur, stage: '提案' }, '已帶入提案里程碑（示範內容）');
+  if ($('#msD')) $('#msD').onclick = () => planAct('applyMilestones', { caseId: S.cur, stage: '設計' }, '已帶入設計里程碑（示範內容）');
+  if ($('#msAdd')) $('#msAdd').onclick = () => msForm(null);
+  $$('[data-mse]').forEach(e => e.onclick = () => msForm(d.ms.find(m => m.id === e.dataset.mse)));
+  $$('[data-msd]').forEach(e => e.onclick = () => { const m = d.ms.find(x => x.id === e.dataset.msd); planAct('setMilestone', { id: m.id, act: m.status === '已完成' ? 'undo' : 'done' }, m.status === '已完成' ? '已取消完成' : '已完成'); });
+  $$('[data-msr]').forEach(b => b.onclick = () => {
+    sheet(`<h3>退回重做</h3><label>原因</label><textarea id="mrw" placeholder="例如：平配動線需再調整，客廳與餐廳比例不對"></textarea><div class="btns"><button class="btn pri" id="mrgo">退回</button></div>`);
+    $('#mrgo').onclick = () => planAct('setMilestone', { id: b.dataset.msr, act: 'return', reason: $('#mrw').value.trim() }, '已退回');
+  });
+}
+function msForm(m) {
+  if (guard()) return;
+  const ppl = S.home.people;
+  sheet(`<h3>${m ? '編輯里程碑' : '新增里程碑'}</h3>
+    <label>名稱</label><input id="msn" value="${esc(m ? m.name : '')}" placeholder="例如：週三討論平配">
+    <label>負責人</label><select id="mso"><option value=""></option>${ppl.map(p => `<option value="${p.id}" ${m && m.owner === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+    <label>期限</label><input type="date" id="msdue" value="${toInput(m ? m.due : '')}">
+    ${m ? '<label>改期原因（改期限時必填）</label><textarea id="msw"></textarea>' : ''}
+    ${m && m.note ? `<div class="lst mute" style="white-space:pre-wrap">${esc(m.note)}</div>` : ''}
+    <div class="btns"><button class="btn pri" id="msgo">儲存</button></div>`);
+  $('#msgo').onclick = () => { const name = $('#msn').value.trim(); if (!name) return toast('請填寫名稱'); planAct('saveMilestone', { caseId: S.cur, id: m ? m.id : '', name, owner: $('#mso').value, due: $('#msdue').value, reason: $('#msw') ? $('#msw').value.trim() : '', stage: S.data.info['階段'] }, '已儲存'); };
 }
 async function planAct(action, payload, msg, ask) {
   if (guard()) return;
