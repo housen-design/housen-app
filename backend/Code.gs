@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v3（日誌簽核與 PDF）
+ * 浩森設計工作管理系統｜後端 v3.1（日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -89,7 +89,7 @@ function run_(email, action, payload) {
     if (real.role !== 'Boss' || !TEST_MODE) throw new Error('沒有預覽權限');
     me = Object.assign(userById_(payload.as), { preview: true });
   }
-  const READ = { home: getHome_, case: getCase_, thumbs: getThumbs_ };
+  const READ = { home: getHome_, case: getCase_, thumbs: getThumbs_, pdfView: pdfView_ };   // 只讀，預覽模式也可用
   const SLOW = { pdfLog: pdfLog_ };   // 產生 PDF 較久，不鎖住其他人
   const WRITE = {
     saveLog: saveLog_, updateLog: updateLog_, deletePhoto: deletePhoto_,
@@ -302,7 +302,8 @@ function getCase_(me, p) {
       overdue: logStatus_(l) === LS.PENDING && overdue_(l['簽核期限']), escal: l['轉Boss確認'] === 'Y',
       signedBy: l['簽核者'], signedAt: l['簽核時間'], resign: resign, snap: resign ? parseSnap_(l) : null,
       signedOnce: !!l['簽核內容'], minor: l['小修待看'] === 'Y', returnNote: l['退回原因'],
-      pdfAt: l['PDF時間'], revisedAt: l['修訂時間'], shares: +l['分享次數'] || 0, sharedBy: l['最後分享人'], sharedAt: l['最後分享時間']
+      pdfAt: l['PDF時間'], hasPdf: !!l['PDF檔ID'], revisedAt: l['修訂時間'], shares: +l['分享次數'] || 0, sharedBy: l['最後分享人'], sharedAt: l['最後分享時間'],
+      downloads: +l['下載次數'] || 0, downloadedBy: l['最後下載人'], downloadedAt: l['最後下載時間']
     };
   }).sort((a, b) => (b.date + b.created).localeCompare(a.date + a.created));
   const ins = readTable_('主管指示').filter(i => i['案件ID'] === p.id && i['指示內容']).map(i => ({
@@ -466,11 +467,26 @@ function pdfLog_(me, d) {
   return { name: file.getName(), data: Utilities.base64Encode(file.getBlob().getBytes()), url: file.getUrl() };
 }
 
-/** 記錄「誰、何時按了分享」（不代表客戶已收到） */
+/**
+ * 記錄 PDF 的分享或下載操作（兩者分開記錄；分享操作完成不代表客戶已收到）。
+ * d.kind = 'share'（手機分享選單完成）或 'download'（下載檔案）。只累加，不重算、不清除歷史。
+ */
 function shareLog_(me, d) {
   const l = getLog_(d.id);
-  updateRow_('工程日誌', '日誌ID', d.id, { '分享次數': (+l['分享次數'] || 0) + 1, '最後分享人': me.id, '最後分享時間': now_() });
+  if (!canShare_(me, caseRow_(l['案件ID']))) throw new Error('只有案件負責設計師或主管可以分享');
+  if (d.kind === 'download') updateRow_('工程日誌', '日誌ID', d.id, { '下載次數': (+l['下載次數'] || 0) + 1, '最後下載人': me.id, '最後下載時間': now_() });
+  else updateRow_('工程日誌', '日誌ID', d.id, { '分享次數': (+l['分享次數'] || 0) + 1, '最後分享人': me.id, '最後分享時間': now_() });
   return true;
+}
+
+/** 唯讀查看既有 PDF：只回傳已存檔的檔案，不重新產生；預覽模式也走這裡 */
+function pdfView_(me, d) {
+  const l = getLog_(d.id);
+  if (!l['PDF檔ID']) throw new Error('這篇還沒有 PDF 檔（主管簽核後才會產生）');
+  let f;
+  try { f = DriveApp.getFileById(l['PDF檔ID']); } catch (e) { f = null; }
+  if (!f || f.isTrashed()) throw new Error('找不到這篇的 PDF 檔，可能已被移除');
+  return { name: f.getName(), url: f.getUrl(), at: l['PDF時間'] };
 }
 
 /* ========== PDF ========== */

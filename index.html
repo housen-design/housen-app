@@ -163,6 +163,35 @@ textarea{min-height:84px;resize:vertical}
 .warnbox{background:var(--warn2);color:var(--warn);border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.6;margin-top:6px}
 .ck.lg{border-radius:6px;border-color:var(--info);color:var(--info);font-size:11px}
 .cdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bad);margin-left:6px;vertical-align:middle}
+/* 驗收修正 2026-11-19：點擊範圍、滑動提示、長字換行、橫式版面、更新失敗提示 */
+.pv button{min-height:40px;padding:9px 14px;font-size:13px}
+.pvwrap{position:relative}
+.pvwrap.ovf:after{content:"";position:absolute;right:0;top:10px;height:42px;width:40px;background:linear-gradient(90deg,rgba(247,244,239,0),var(--app) 80%);pointer-events:none}
+.pvwrap.end:after{display:none}
+.pvhint{display:none;font-size:11px;color:var(--muted);margin-top:4px;text-align:right}
+.pvwrap.ovf .pvhint{display:block}.pvwrap.end .pvhint{visibility:hidden}
+h2 .act{padding:11px 6px 11px 14px;margin:-11px -6px -11px auto}
+.brand a{display:inline-block;padding:9px 4px;margin:-9px 0}
+.todo.ro{cursor:default}
+.lnote{display:block;font-size:11px;opacity:.85}
+.t,.tt,.s,.top h1,.info dd,.lbody,.instr,.reply,.issue,.lst,.mini span,.diff,.warnbox,.sheet .s{overflow-wrap:anywhere;word-break:break-word}
+.row2>div,.lgs,.todo>div{min-width:0}
+.info{grid-template-columns:84px minmax(0,1fr)}
+.app{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+.neterr{position:fixed;left:50%;transform:translateX(-50%);top:calc(10px + env(safe-area-inset-top));width:calc(100% - 24px);max-width:536px;z-index:35;background:var(--bad2);color:var(--bad);border:1px solid #e9c2bb;border-radius:12px;padding:9px 10px 9px 12px;font-size:12.5px;line-height:1.5;display:none;align-items:center;gap:10px;box-shadow:0 6px 18px rgba(0,0,0,.08)}
+.neterr span{flex:1}.neterr small{opacity:.8}
+.neterr button{border:0;background:var(--bad);color:#fff;border-radius:9px;padding:9px 14px;font:inherit;font-size:13px;cursor:pointer;min-height:40px}
+.neterr b{font-weight:400;padding:8px;cursor:pointer}
+@media (orientation:landscape) and (max-height:520px){
+  .top{position:static;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:8px}
+  .top h1.big{font-size:21px}.sub{margin-top:4px}
+  .pv{margin-top:6px}.pvbar{margin-top:6px;padding:5px 10px}
+  .tip{padding:6px 30px 6px 10px;font-size:11.5px;line-height:1.5;margin-bottom:8px}.tip br{display:none}
+  .fab{padding:10px 15px;font-size:13px;bottom:calc(64px + env(safe-area-inset-bottom))}
+  .fab.home{display:none!important}
+  main{padding-bottom:84px}
+  .nav{padding-top:3px;padding-bottom:calc(3px + env(safe-area-inset-bottom))}.nav button{flex-direction:row;gap:5px;padding:7px 0}
+}
 </style>
 </head>
 <body>
@@ -177,20 +206,29 @@ textarea{min-height:84px;resize:vertical}
 <div class="toast" id="toast"></div>
 <div class="upd" id="upd">有新版本，點一下更新</div>
 <div class="ptr" id="ptr">放開以重新整理</div>
+<div class="neterr" id="neterr"></div>
 <div class="loading" id="loading"><div class="spin"></div><span id="loadmsg">處理中…</span></div>
 
 <script>
 const S = { home: null, real: null, as: '', cur: null, data: null, tab: 'sum', filter: 'all', open: {}, thumbs: {}, insFilter: 'open', showDone: false };
 
 const TOKEN_KEY = 'housen_token';
+const READ_ACTIONS = ['home', 'case', 'thumbs', 'pdfView'];   // 只讀；預覽模式只允許這些
 const API = async (action, payload) => {
+  if (S.as && !READ_ACTIONS.includes(action)) throw '預覽模式只能看，不能存檔';
   const p = Object.assign({ as: S.as }, payload || {});
   if (window.MOCK) return MOCK(action, p);
+  if (navigator.onLine === false) throw '目前沒有網路連線，請確認網路後再試';
+  const ctl = new AbortController(), wait = action === 'pdfLog' ? 120000 : 45000;
+  const timer = setTimeout(() => ctl.abort(), wait);
   let r;
   try {
-    r = await fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify({ action, payload: p, token: localStorage.getItem(TOKEN_KEY) }) });
-  } catch (e) { throw '網路連線失敗，請檢查網路後再試'; }
-  const j = await r.json();
+    r = await fetch(CONFIG.API_URL, { method: 'POST', signal: ctl.signal, body: JSON.stringify({ action, payload: p, token: localStorage.getItem(TOKEN_KEY) }) });
+  } catch (e) {
+    throw e && e.name === 'AbortError' ? '伺服器超過 ' + wait / 1000 + ' 秒沒有回應，請稍後再試' : '連不上伺服器，請檢查網路後再試';
+  } finally { clearTimeout(timer); }
+  let j;
+  try { j = await r.json(); } catch (e) { throw '伺服器回應異常（' + r.status + '），請稍後再試'; }
   if (!j.ok) { if (j.auth) { localStorage.removeItem(TOKEN_KEY); showLogin(j.error); } throw j.error; }
   return j.data;
 };
@@ -227,7 +265,7 @@ const COLORS = ['#9A9086', '#8A6A4B', '#5B6F8C', '#4F8A8B', '#B9773A', '#6E8FA6'
 async function boot() {
   if (!window.MOCK && !localStorage.getItem(TOKEN_KEY)) return showLogin();
   try { S.home = await API('home'); if (!S.real) S.real = S.home.me; S.lastLoad = Date.now(); notifyNew(); renderHome(); }
-  catch (e) { if (localStorage.getItem(TOKEN_KEY) || window.MOCK) $('#main').innerHTML = `<div class="err">無法載入：${esc(e)}</div>`; }
+  catch (e) { if (localStorage.getItem(TOKEN_KEY) || window.MOCK) { $('#main').innerHTML = `<div class="err">無法載入：${esc(e)}<div class="btns"><button class="btn ghost sm" id="bootretry">重試</button></div></div>`; $('#bootretry').onclick = () => { $('#main').innerHTML = '<div class="boot"><div class="logo">浩 森</div>載入中…</div>'; boot(); }; } }
 }
 async function reloadHome() { S.home = await API('home'); }
 
@@ -251,14 +289,15 @@ function renderHome() {
   $('#top').innerHTML = `<div class="brand"><span>浩森設計工作管理系統</span><span>${leader() && !preview() ? '<a id="admin">⚙ 工種設定</a>　' : ''}<a id="logout">登出</a></span></div>
     <h1 class="big">${esc(short(me.name))}工作總表</h1>
     <div class="sub"><span>${esc(md(h.today))}</span><b>還有 ${open.length} 件事沒做完</b>${late.length ? `<b class="bad">・${late.length} 件逾期</b>` : ''}</div>
-    ${h.testMode && S.real && S.real.role === 'Boss' ? `<div class="pv"><button data-as="" class="${!S.as ? 'on' : ''}">我的畫面</button>${h.people.filter(p => p.id !== S.real.id).map(p => `<button data-as="${p.id}" class="${S.as === p.id ? 'on' : ''}">看 ${esc(short(p.name))}</button>`).join('')}</div>` : ''}
+    ${h.testMode && S.real && S.real.role === 'Boss' ? `<div class="pvwrap" id="pvwrap"><div class="pv" id="pvrow"><button data-as="" class="${!S.as ? 'on' : ''}">我的畫面</button>${h.people.filter(p => p.id !== S.real.id).map(p => `<button data-as="${p.id}" class="${S.as === p.id ? 'on' : ''}">看 ${esc(short(p.name))}</button>`).join('')}</div><div class="pvhint">左右滑動看其他人 ›</div></div>` : ''}
     ${preview() ? `<div class="pvbar">預覽中：這是 ${esc(me.name)} 看到的畫面（只能看，不能存檔）</div>` : ''}`;
-  $$('[data-as]').forEach(b => b.onclick = async () => { S.as = b.dataset.as; busy(true, '切換中…'); try { await reloadHome(); renderHome(); } catch (e) { toast(e); } busy(false); });
+  $$('[data-as]').forEach(b => b.onclick = async () => { const old = S.as; S.as = b.dataset.as; busy(true, '切換中…'); try { await reloadHome(); renderHome(); } catch (e) { S.as = old; toast(e); } busy(false); });
+  pvOverflow();
   if ($('#admin')) $('#admin').onclick = tradeAdmin;
   $('#logout').onclick = logout;
 
   const sorted = open.slice().sort((a, b) => (dnum(a.due) || 9e15) - (dnum(b.due) || 9e15));
-  let html = installTip() + `<h2>我的待辦<small>${open.length} 件未完成</small><span class="act" id="addTodo">＋ 新增</span></h2><div class="tl">`;
+  let html = installTip() + `<h2>我的待辦<small>${open.length} 件未完成</small>${preview() ? '' : '<span class="act" id="addTodo">＋ 新增</span>'}</h2><div class="tl">`;
   html += sorted.length ? sorted.map(itemHTML).join('') : '<div class="empty">都做完了 👍</div>';
   if (doneToday.length) {
     html += `<div class="more" id="tgDone">${S.showDone ? '收起' : '今天完成 ' + doneToday.length + ' 件'}</div>`;
@@ -281,7 +320,7 @@ function renderHome() {
   $$('[data-case]').forEach(e => e.onclick = () => openCase(e.dataset.case, 'sum'));
   bindItems();
   if ($('#tgDone')) $('#tgDone').onclick = () => { S.showDone = !S.showDone; renderHome(); };
-  $('#addTodo').onclick = () => newTodo('');
+  if ($('#addTodo')) $('#addTodo').onclick = () => newTodo('');
   if ($('#addCase')) $('#addCase').onclick = newCase;
   const fab = $('#fab'); fab.className = 'fab home'; fab.style.display = preview() ? 'none' : 'block'; fab.textContent = '＋ 待辦'; fab.onclick = () => newTodo('');
   window.scrollTo(0, 0);
@@ -292,6 +331,14 @@ const LOG_TASK = {
   confirm: ['確認日誌', '待你確認', 'c-warn'], returned: ['被退回', '退回', 'c-bad'], draft: ['草稿未送出', '草稿', 'c-mute'],
   send: ['可傳給客戶', '已簽核', 'c-ok'], minor: ['已修改（新增照片）', '看一下', 'c-info']
 };
+/** 角色列放不下時，顯示右側漸層與「左右滑動」提示；滑到底就收起 */
+function pvOverflow() {
+  const w = $('#pvwrap'), r = $('#pvrow'); if (!w || !r) return;
+  const upd = () => { const ovf = r.scrollWidth > r.clientWidth + 2; w.classList.toggle('ovf', ovf); w.classList.toggle('end', ovf && r.scrollLeft + r.clientWidth >= r.scrollWidth - 4); };
+  r.onscroll = upd; upd();
+  const on = r.querySelector('.on'); if (on && on.offsetLeft + on.offsetWidth > r.clientWidth) r.scrollLeft = on.offsetLeft - 40;
+}
+window.addEventListener('resize', () => pvOverflow());
 function itemHTML(i) {
   if (i.kind === 'log') {
     const [verb, tag, cls] = LOG_TASK[i.status] || ['日誌', i.status, 'c-mute'];
@@ -311,7 +358,8 @@ function itemHTML(i) {
     <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[esc(i.caseName), waitMe ? esc(short(pname(i.to))) + ' 已回報，等你確認' : (i.status === '已回報' ? '已回報，等主管確認' : dueTxt(i.due)), !waitMe ? esc(short(pname(i.from))) + ' 指示' : ''].filter(String).join('・')}</div></div>${chip(waitMe ? '待你確認' : i.status, INS_CLS[i.status])}</div>`;
 }
 function bindItems() {
-  $$('[data-todo]').forEach(e => e.onclick = async () => {
+  if (preview()) $$('[data-todo]').forEach(e => e.classList.add('ro'));
+  else $$('[data-todo]').forEach(e => e.onclick = async () => {
     if (guard()) return;
     const done = e.dataset.done !== '1';
     e.classList.toggle('done', done); e.querySelector('.ck').textContent = done ? '✓' : '';
@@ -434,7 +482,9 @@ function logStatusLine(l) {
   if (l.status === '草稿') return l.returnNote ? `<div class="lst bad">被退回修改：${esc(l.returnNote)}</div>` : `<div class="lst mute">草稿，尚未送出</div>`;
   if (l.status === '待設計師確認') return `<div class="lst warn">等 ${esc(short(pname(caseDesigner())))} 確認後送簽核</div>`;
   if (l.status === '待簽核') return `<div class="lst ${l.overdue ? 'bad' : 'warn'}">${l.resign ? '已簽核內容被修改，' : ''}等 ${esc(short(pname(l.signer)))} ${l.resign ? '確認修改' : '簽核'}${l.escal ? '（主管轉 Boss 確認）' : ''}・期限 ${t(l.deadline)}${l.overdue ? '・<b>已逾期</b>' : ''}${l.resign ? '<br>確認前暫停分享，原本的 PDF 不會被覆蓋' : ''}</div>`;
-  return `<div class="lst ok">已簽核：${esc(short(pname(l.signedBy)))} ${t(l.signedAt)}${l.revisedAt ? '・修訂於 ' + t(l.revisedAt) : ''}・${l.shares ? `已分享 ${l.shares} 次（最後 ${esc(short(pname(l.sharedBy)))} ${t(l.sharedAt)}）` : '尚未分享給客戶'}${l.minor ? '<br>簽核後新增了照片（不需重簽）' : ''}</div>`;
+  const sh = l.shares ? `分享操作 ${l.shares} 次（最後 ${esc(short(pname(l.sharedBy)))} ${t(l.sharedAt)}）` : '尚未執行分享';
+  const dl = l.downloads ? `・下載 ${l.downloads} 次（最後 ${esc(short(pname(l.downloadedBy)))} ${t(l.downloadedAt)}）` : '';
+  return `<div class="lst ok">已簽核：${esc(short(pname(l.signedBy)))} ${t(l.signedAt)}${l.revisedAt ? '・修訂於 ' + t(l.revisedAt) : ''}<br>${sh}${dl}${l.shares ? '<span class="lnote">（分享操作完成不代表客戶已收到）</span>' : ''}${l.minor ? '<br>簽核後新增了照片（不需重簽）' : ''}</div>`;
 }
 function vLog() {
   const logs = S.data.logs, me = ME().id;
@@ -454,6 +504,7 @@ function vLog() {
       }
       if (l.status === '已簽核' && canShareL()) btn.push(`<button class="btn pri sm" data-share="${l.id}">分享 PDF</button>`);
     }
+    if (l.status === '已簽核' || l.hasPdf) btn.push(`<button class="btn ghost sm" data-pdfview="${l.id}">查看 PDF</button>`);
     const chipTxt = l.status === '待簽核' && l.resign ? '修改待確認' : l.status === '草稿' && l.returnNote ? '退回' : l.status;
     return `<div class="lrow ${S.open[l.id] ? 'open' : ''}" data-lid="${l.id}">
       <div class="lhead"><span class="caret">▶</span><span class="ld">${esc(md(l.date))}</span>
@@ -488,6 +539,7 @@ function vLog() {
     $('#rgo').onclick = () => logAct('returnLog', b.dataset.lret, $('#rtxt').value.trim());
   });
   $$('[data-share]').forEach(b => b.onclick = () => sharePdf(b.dataset.share));
+  $$('[data-pdfview]').forEach(b => b.onclick = () => viewPdf(b.dataset.pdfview));
   bindIns();
   logs.filter(l => S.open[l.id]).forEach(l => { loadThumbs(l); seeMinor(l); });
 }
@@ -534,6 +586,16 @@ function diffHTML(l) {
   if (added.length) parts.push(`<div class="dk">新增的照片：${added.length} 張（見下方）</div>`);
   return `<div class="diff"><div class="dh">修改內容（紅色刪除線＝原本，綠色＝修改後）</div>${parts.join('') || '<div class="s">內容已改回與簽核時相同</div>'}</div>`;
 }
+/** 唯讀查看：只開啟已存檔的 PDF，不重新產生 */
+async function viewPdf(id) {
+  busy(true, '讀取 PDF…');
+  let r;
+  try { r = await API('pdfView', { id }); } catch (e) { busy(false); return sheet(`<h3>查看 PDF</h3><div class="lst warn">${esc(e)}</div>`); }
+  busy(false);
+  sheet(`<h3>查看 PDF</h3><div class="s">${esc(r.name)}<br>最後產生時間：${esc(r.at || '—')}</div>
+    <div class="btns"><a class="btn pri" href="${esc(r.url)}" target="_blank" rel="noopener" style="text-align:center;text-decoration:none">開啟 PDF</a></div>
+    <div class="hint">這是已存檔的版本，不會重新產生。${preview() ? '預覽模式只能查看。' : '要用最新指示狀態更新並傳給客戶，請用「分享 PDF」。'}</div>`);
+}
 async function sharePdf(id) {
   busy(true, '產生 PDF 中…（約 10 秒）');
   let r;
@@ -548,10 +610,10 @@ async function sharePdf(id) {
       ${can ? '<button class="btn pri" id="shgo">傳送（LINE、Email…）</button>' : ''}
       <a class="btn ${can ? 'ghost' : 'pri'}" id="shdl" href="${url}" download="${esc(r.name)}" style="text-align:center;text-decoration:none">下載 PDF</a>
       <a class="btn ghost" href="${esc(r.url)}" target="_blank" style="text-align:center;text-decoration:none">在雲端資料夾開啟</a>
-    </div><div class="hint">系統會記錄你按了分享的時間；這不代表客戶已經收到。</div>`);
-  const record = () => API('shareLog', { id }).then(refreshCase).then(() => { if (S.tab === 'log') render(); reloadHome().catch(() => { }); }).catch(() => { });
-  if (can) $('#shgo').onclick = async () => { try { await navigator.share({ files: [file], title: r.name }); closeSheet(); toast('已分享'); record(); } catch (e) { if (e && e.name !== 'AbortError') toast('分享失敗，請改用下載'); } };
-  $('#shdl').onclick = () => { record(); };
+    </div><div class="hint">「傳送」和「下載」會分開記錄；完成分享操作不代表客戶已經收到。</div>`);
+  const record = kind => API('shareLog', { id, kind }).then(refreshCase).then(() => { if (S.tab === 'log') render(); reloadHome().catch(() => { }); }).catch(e => toast('紀錄沒有存到：' + e));
+  if (can) $('#shgo').onclick = async () => { try { await navigator.share({ files: [file], title: r.name }); closeSheet(); toast('已完成分享操作'); record('share'); } catch (e) { if (e && e.name !== 'AbortError') toast('分享失敗，請改用下載'); } };
+  $('#shdl').onclick = () => { record('download'); };
 }
 async function loadThumbs(l) {
   if (!l) return; const need = l.photos.map(p => p.path).filter(p => !S.thumbs[p]); if (!need.length) return;
@@ -740,12 +802,27 @@ function showLogin(msg) {
   $('#main').innerHTML = `<div class="login"><img class="logo" src="icons/logo.png" alt="浩森設計 HOUSEN"><h1>浩森設計工作管理系統</h1><div class="rule"></div>
     <div class="gbtn" id="gbtn"></div><p class="hint">請使用公司 Google 帳號（@housenaid.com）登入</p><div class="lerr" id="lerr">${esc(msg || '')}</div>
     <div class="foot"><b>HOUSEN</b><i>INTERIOR DESIGN</i></div></div>`;
+  let tries = 0;
   const init = () => {
-    if (!(window.google && google.accounts && google.accounts.id)) return setTimeout(init, 200);
+    if (!(window.google && google.accounts && google.accounts.id)) {
+      if (++tries === 25) $('#lerr').textContent = '正在連線 Google 登入服務…';
+      if (tries >= 60) return gisFail();   // 約 12 秒
+      return setTimeout(init, 200);
+    }
+    $('#lerr').textContent = msg || '';
     google.accounts.id.initialize({ client_id: CONFIG.CLIENT_ID, hd: 'housenaid.com', callback: onGoogle, auto_select: true, ux_mode: 'popup' });
     google.accounts.id.renderButton($('#gbtn'), { theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with', locale: 'zh-TW', width: 260 });
   };
   init();
+}
+function gisFail() {
+  $('#lerr').innerHTML = (navigator.onLine === false ? '目前沒有網路連線。' : 'Google 登入服務載入失敗：可能是網路不穩，或瀏覽器的廣告／追蹤阻擋功能擋住了 Google。')
+    + '<div class="btns" style="justify-content:center"><button class="btn ghost sm" id="gretry" style="flex:0 0 auto">重新載入登入</button></div>';
+  $('#gretry').onclick = () => {
+    $$('script[src*="accounts.google.com/gsi"]').forEach(x => x.remove());
+    const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client?t=' + Date.now(); sc.async = true; document.head.appendChild(sc);
+    showLogin();
+  };
 }
 async function onGoogle(resp) {
   $('#lerr').textContent = '登入中…';
@@ -791,13 +868,25 @@ function notifyNew() {
   localStorage.setItem(SEEN_KEY, JSON.stringify(open.map(itemKey)));
 }
 
-async function silentRefresh() {
-  if (!S.home || $('#sheet').style.display === 'block') return;
+/** 重新抓資料。成功回傳 true；失敗保留目前畫面、顯示原因與重試（填寫中的表單不會被動到） */
+async function silentRefresh(manual) {
+  if (!S.home) return false;
+  if ($('#sheet').style.display === 'block') return false;   // 正在填表單，不重畫畫面
   try {
-    if (S.cur) { await refreshCase(); render(); }
-    S.home = await API('home'); S.lastLoad = Date.now(); notifyNew();
-    if (!S.cur) renderHome();
-  } catch (e) { }
+    const home = await API('home'), data = S.cur ? await API('case', { id: S.cur }) : null;
+    if ($('#sheet').style.display === 'block') return true;
+    S.home = home; if (data) S.data = data; S.lastLoad = Date.now(); notifyNew();
+    if (S.cur) render(); else renderHome();
+    netErr(''); return true;
+  } catch (e) { netErr(e, manual); return false; }
+}
+function netErr(e, manual) {
+  const bar = $('#neterr');
+  if (!e) { bar.style.display = 'none'; return; }
+  bar.innerHTML = `<span>更新失敗：${esc(e)}<br><small>畫面上是上次成功載入的資料</small></span><button id="netretry">重試</button><b id="netx">✕</b>`;
+  bar.style.display = 'flex';
+  $('#netx').onclick = () => bar.style.display = 'none';
+  $('#netretry').onclick = async () => { busy(true, '重新整理中…'); const ok = await silentRefresh(true); busy(false); toast(ok ? '已更新' : '仍然無法更新'); };
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && S.lastLoad && Date.now() - S.lastLoad > 30000) silentRefresh();
@@ -809,7 +898,7 @@ setInterval(() => { if (document.visibilityState === 'visible' && S.lastLoad && 
   addEventListener('touchstart', e => { y0 = (scrollY <= 0 && $('#sheet').style.display !== 'block') ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
   addEventListener('touchmove', e => { if (y0 === null) return; dy = e.touches[0].clientY - y0; if (dy > 0) ptr.style.transform = `translate(-50%, ${Math.min(dy, 90) - 60}px)`; ptr.textContent = dy > 80 ? '放開以重新整理' : '下拉重新整理'; }, { passive: true });
   addEventListener('touchend', async () => {
-    if (y0 !== null && dy > 80) { ptr.textContent = '更新中…'; ptr.style.transform = 'translate(-50%, 20px)'; await silentRefresh(); toast('已更新'); }
+    if (y0 !== null && dy > 80) { ptr.textContent = '更新中…'; ptr.style.transform = 'translate(-50%, 20px)'; const ok = await silentRefresh(true); toast(ok ? '已更新' : '更新失敗，請看上方說明'); }
     ptr.style.transform = 'translate(-50%, -60px)'; y0 = null;
   });
 })();
@@ -823,9 +912,28 @@ function installTip() {
   return `<div class="tip"><span class="tx" id="tipx">✕</span>把「浩森工作」加到手機主畫面，之後像 App 一樣直接開：<br>${how}</div>`;
 }
 
+/* 新版偵測：除了 service worker 更新，也比對網站上的 index.html 是否和目前開著的不同（不必手動改版本號） */
+let BUILD_SIG = null;
+const sig = t => { let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return h; };
+async function checkBuild() {
+  if (window.MOCK || document.visibilityState !== 'visible') return;
+  try {
+    const t = await (await fetch('index.html?v=' + Date.now(), { cache: 'no-store' })).text();
+    if (BUILD_SIG === null) BUILD_SIG = sig(t);
+    else if (sig(t) !== BUILD_SIG) showUpdate(null);
+  } catch (e) { }
+}
+function showUpdate(w) {
+  const u = $('#upd'); u.style.display = 'block';
+  u.onclick = () => { if (w) w.postMessage('skip'); else location.reload(); };
+}
+checkBuild();
+setInterval(checkBuild, 10 * 60000);
+document.addEventListener('visibilitychange', checkBuild);
 if ('serviceWorker' in navigator && !window.MOCK) {
   navigator.serviceWorker.register('sw.js').then(reg => {
-    const show = w => { const u = $('#upd'); u.style.display = 'block'; u.onclick = () => w.postMessage('skip'); };
+    if (!reg) return;
+    const show = w => showUpdate(w);
     if (reg.waiting && navigator.serviceWorker.controller) show(reg.waiting);
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
@@ -833,7 +941,7 @@ if ('serviceWorker' in navigator && !window.MOCK) {
     });
     setInterval(() => reg.update(), 30 * 60000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update(); });
-  });
+  }).catch(() => { });
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading) { reloading = true; location.reload(); } });
 }
