@@ -90,7 +90,7 @@ function run_(email, action, payload) {
     if (real.role !== 'Boss' || !TEST_MODE) throw new Error('沒有預覽權限');
     me = Object.assign(userById_(payload.as), { preview: true });
   }
-  const READ = { home: getHome_, case: getCase_, thumbs: getThumbs_, pdfView: pdfView_, stats: stats_ };   // 只讀，預覽模式也可用
+  const READ = { home: getHome_, case: getCase_, thumbs: getThumbs_, pdfView: pdfView_, stats: stats_, admin: admin_ };   // 只讀，預覽模式也可用
   const SLOW = { pdfLog: pdfLog_, clientPdf: clientPdf_, reportPdf: reportPdf_ };   // 產生 PDF 較久，不鎖住其他人
   const WRITE = {
     saveLog: saveLog_, updateLog: updateLog_, deletePhoto: deletePhoto_,
@@ -101,7 +101,8 @@ function run_(email, action, payload) {
     savePlanItem: savePlanItem_, cancelPlanItem: cancelPlanItem_, applyTemplate: applyTemplate_, lockPlan: lockPlan_,
     setActualStart: setActualStart_, setDone: setDone_,
     saveMeeting: saveMeeting_, reviewMeeting: reviewMeeting_, saveClientIns: saveClientIns_, confirmClientIns: confirmClientIns_,
-    markNoWork: markNoWork_, saveCheck: saveCheck_, saveRepair: saveRepair_, applySop: applySop_, setSop: setSop_, applyMilestones: applyMilestones_, saveMilestone: saveMilestone_, setMilestone: setMilestone_
+    markNoWork: markNoWork_, saveCheck: saveCheck_, saveRepair: saveRepair_, applySop: applySop_, setSop: setSop_, applyMilestones: applyMilestones_, saveMilestone: saveMilestone_, setMilestone: setMilestone_,
+    saveSetting: saveSetting_, saveTemplateRow: saveTemplateRow_, suggestTemplate: suggestTemplate_, setSuggestion: setSuggestion_
   };
   if (READ[action]) return READ[action](me, payload);
   if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); return SLOW[action](me, payload); }
@@ -134,24 +135,60 @@ function readTable_(name) {
 function tryTable_(name) { return ss_().getSheetByName(name) ? readTable_(name) : []; }
 
 /** 發布前在編輯器執行：檢查新版需要的資料表與欄位是否都已建立 */
-function checkSchema() {
-  const need = {
-    '工程日誌': ['日誌狀態', '簽核人', '簽核期限', '簽核內容', 'PDF檔ID', '分享次數', '下載次數', '最後下載人', '最後下載時間'],
-    '日誌照片': ['刪除時間', '刪除人'],
-    '案件': ['最後修改時間', '最後修改人', '進度定案時間', '進度定案人'],
-    '進度計畫': ['工序ID', '案件ID', '順序', '工種', '工序名稱', '原計畫開始', '原計畫完成', '目前計畫開始', '目前計畫完成', '實際開始', '實際完成', '查驗點', '改期原因',
-      '狀態', '實際開始確認人', '實際完成確認人', '範本工序ID', '最後修改人', '最後修改時間'],
-    '進度異動紀錄': ['紀錄ID', '案件ID', '工序ID', '項目', '原值', '新值', '原因', '修改人', '時間']
-  };
+/* ========== 資料表欄位（部署前在編輯器執行 checkSchema；缺的用 fixSchema 補） ==========
+ * fixSchema 只做兩件事：建立缺少的資料表（只有標題列）、在既有資料表最右邊補缺少的欄位標題。不移動、不刪除任何資料。
+ */
+const SCHEMA = {
+    '人員': ['人員ID', '姓名', 'Email', '職稱', '系統角色', '可看金額', '可看績效', '在職'],
+    '工種清單': ['工種', '色碼', '排序', '啟用'],
+    '案件': ['案件ID', '案件名稱', '客戶姓名', '客戶電話', '客戶LINE', '地址', '類型', '來源', '負責設計師', '階段', '狀態', '建立日期', '提案日', '設計約簽約日', '工程約簽約日', '預計開工日', '預計完工日', '實際完工日', '結案日', '保固到期日', 'Drive資料夾', '設計費', '工程金額', '備註', '最後修改時間', '最後修改人', '進度定案時間', '進度定案人'],
+    '工程日誌': ['日誌ID', '案件ID', '日期', '工種', '今日狀況', '進度百分比', '發現問題', '填寫人', '建立時間', '最後修改時間', '修改次數', '最後修改人', '日誌狀態', '送出時間', '簽核人', '簽核期限', '轉Boss確認', '簽核者', '簽核時間', '簽核內容', '修改待簽', '小修待看', '退回原因', 'PDF檔ID', 'PDF時間', '修訂時間', '分享次數', '最後分享人', '最後分享時間', '下載次數', '最後下載人', '最後下載時間'],
+    '進度計畫': ['工序ID', '案件ID', '順序', '工種', '工序名稱', '原計畫開始', '原計畫完成', '目前計畫開始', '目前計畫完成', '實際開始', '實際完成', '查驗點', '改期原因', '關聯客戶指示ID', '狀態', '實際開始確認人', '實際完成確認人', '範本工序ID', '最後修改人', '最後修改時間'],
+    '進度異動紀錄': ['紀錄ID', '案件ID', '工序ID', '項目', '原值', '新值', '原因', '修改人', '時間'],
+    '範本_工序': ['工序ID', '順序', '工種', '工序名稱', '標準工期（工作天）', '查驗點', '備註', '啟用'],
+    '會議': ['會議ID', '案件ID', '日期', '會議名稱', '出席人', '錄音檔', 'AI摘要', '核對人', '核對時間', '記錄人', '建立時間', 'PDF時間'],
+    '客戶指示': ['指示ID', '案件ID', '會議ID', '類型', '來源', '日期', '內容', '影響費用或工期', '追加減金額', '影響工期天數', '確認狀態', '確認方式', '客戶簽名', '確認截圖', '確認時間', '記錄人', '鎖定', '確認備註', '建立時間', '最後修改人', '最後修改時間'],
+    '文件紀錄': ['文件ID', '案件ID', '日期', '文件名稱', '文件類型', '對內對外', '檔案連結', '產生人', '檔案ID', '來源ID', '產生時間'],
+    '查驗紀錄': ['紀錄ID', '案件ID', '查驗點', '檢查ID', '檢查項目', '照片', '完成', '狀態', '放行人', '放行時間', '備註', '工序ID', '檢查人', '檢查時間'],
+    '範本_查驗清單': ['檢查ID', '查驗點', '順序', '檢查項目', '需拍照', '啟用'],
+    '案件SOP': ['ID', '案件ID', '項目ID', '項目', '完成', '完成日', '完成人', '備註', '順序', '負責角色', '說明'],
+    '範本_開案SOP': ['項目ID', '順序', '項目', '說明', '負責角色', '啟用'],
+    '里程碑': ['任務ID', '案件ID', '階段', '名稱', '負責人', '原定日期', '目前期限', '完成日', '狀態', '退回次數', '改期原因', '備註', '順序'],
+    '範本_里程碑': ['里程碑ID', '階段', '順序', '名稱', '負責角色', '相對天數', '說明', '啟用'],
+    '公司設定': ['項目', '值', '說明'],
+    '保固報修': ['報修ID', '案件ID', '報修日期', '內容', '負責人', '狀態', '處理結果', '完成日', '記錄人', '建立時間'],
+    '範本建議': ['建議ID', '來源', '來源ID', '案件ID', '範本', '內容', '提出人', '提出時間', '狀態', '處理人', '處理時間', '處理備註'],
+    '日誌豁免': ['ID', '案件ID', '日期', '原因', '記錄人', '時間'],
+    '日誌照片': ['照片ID', '日誌ID', '案件ID', '照片', '空間', '位置', '說明', '拍攝時間', '刪除時間', '刪除人'],
+    '主管指示': ['指示ID', '案件ID', '日誌ID', '指示內容', '負責人', '期限', '狀態', '回報內容', '回報時間', '結案時間', '退回次數', '下指示人', '建立時間'],
+    '待辦': ['待辦ID', '案件ID', '內容', '負責人', '期限', '狀態', '建立人', '建立時間', '完成時間']
+};
+function schemaGaps_() {
   const miss = [];
-  Object.keys(need).forEach(n => {
+  Object.keys(SCHEMA).forEach(n => {
     const sh = ss_().getSheetByName(n);
-    if (!sh) { miss.push('缺資料表：' + n); return; }
-    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-    need[n].forEach(h => { if (head.indexOf(h) < 0) miss.push(n + ' 缺欄位：' + h); });
+    if (!sh) { miss.push({ sheet: n, cols: SCHEMA[n], newSheet: true }); return; }
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+    const lack = SCHEMA[n].filter(h => head.indexOf(h) < 0);
+    if (lack.length) miss.push({ sheet: n, cols: lack });
   });
-  Logger.log(miss.length ? miss.join('\n') : '欄位齊全，可以部署');
   return miss;
+}
+function checkSchema() {
+  const miss = schemaGaps_();
+  Logger.log(miss.length ? miss.map(m => (m.newSheet ? '缺資料表：' : '缺欄位：') + m.sheet + (m.newSheet ? '' : ' → ' + m.cols.join('、'))).join('\n') + '\n可執行 fixSchema 補上（不動既有資料）' : '欄位齊全，可以部署');
+  return miss;
+}
+function fixSchema() {
+  const ss = ss_(), done = [];
+  schemaGaps_().forEach(m => {
+    if (m.newSheet) { ss.insertSheet(m.sheet).getRange(1, 1, 1, m.cols.length).setValues([m.cols]); done.push('新增資料表：' + m.sheet); return; }
+    const sh = ss.getSheetByName(m.sheet), last = sh.getLastColumn();
+    sh.getRange(1, last + 1, 1, m.cols.length).setValues([m.cols]);
+    done.push(m.sheet + ' 補欄位：' + m.cols.join('、'));
+  });
+  Logger.log(done.length ? done.join('\n') : '不需要補');
+  return done;
 }
 
 function appendRow_(name, obj) {
@@ -365,7 +402,7 @@ function getHome_(me) {
       created: i['建立時間'], late: !!i['期限'] && i['期限'] < t
     })).sort((a, b) => a.created.localeCompare(b.created));
   }
-  return { me, people, trades, cases, items, overview, tracking, rule: rule, today: today_(), now: fmt_(new Date(), 'yyyy/MM/dd HH:mm'), testMode: TEST_MODE };
+  return { me, people, trades, cases, items, overview, tracking, rule: rule, today: today_(), now: fmt_(new Date(), 'yyyy/MM/dd HH:mm'), testMode: TEST_MODE, tplDemo: String(setting_('範本狀態', '示範')).indexOf('正式') < 0 };
 }
 
 function getCase_(me, p) {
@@ -421,7 +458,7 @@ function getCase_(me, p) {
     id: x['紀錄ID'], item: x['工序ID'], point: x['查驗點'], checkId: x['檢查ID'], label: x['檢查項目'], photo: x['照片'], done: x['完成'] === 'Y',
     status: x['狀態'], note: x['備註'], by: x['檢查人'], at: x['檢查時間']
   }));
-  const checkTpl = tryTable_('範本_查驗清單').map(t => ({ id: t['檢查ID'], point: t['查驗點'], order: +t['順序'] || 0, label: t['檢查項目'], photo: t['需拍照'] === 'Y' }));
+  const checkTpl = tryTable_('範本_查驗清單').filter(t => t['啟用'] !== 'N').map(t => ({ id: t['檢查ID'], point: t['查驗點'], order: +t['順序'] || 0, label: t['檢查項目'], photo: t['需拍照'] === 'Y' }));
   const sop = tryTable_('案件SOP').filter(x => x['案件ID'] === p.id).map(x => ({ id: x['ID'], tpl: x['項目ID'], label: x['項目'], done: x['完成'] === 'Y', date: x['完成日'], by: x['完成人'], note: x['備註'], role: x['負責角色'], order: +x['順序'] || 0 }))
     .sort((a, b) => a.order - b.order);
   const ms = tryTable_('里程碑').filter(x => x['案件ID'] === p.id).map(x => ({
@@ -991,7 +1028,7 @@ function cancelPlanItem_(me, d) {
 function applyTemplate_(me, d) {
   const c = planGuard_(me, d.caseId);
   if (readTable_('進度計畫').some(r => r['案件ID'] === d.caseId && r['狀態'] !== '取消')) throw new Error('這個案件已經有工序，不能再套用範本');
-  const tpl = readTable_('範本_工序').filter(t => t['工序名稱']).sort((a, b) => (+a['順序'] || 0) - (+b['順序'] || 0));
+  const tpl = readTable_('範本_工序').filter(t => t['工序名稱'] && t['啟用'] !== 'N').sort((a, b) => (+a['順序'] || 0) - (+b['順序'] || 0));
   if (!tpl.length) throw new Error('工序範本是空的');
   let cursor = c['預計開工日'] || '', prevStart = '';
   tpl.forEach((t, i) => {
@@ -1158,7 +1195,7 @@ function setting_(k, dflt) { const v = settings_()[k]; return v === undefined ||
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 function logRule_() {
   return {
-    days: String(setting_('日誌填寫日', '一,二,三,四,五,六')).split(/[,，、\s]+/).filter(String),
+    days: String(setting_('日誌填寫日', '一二三四五六')).replace(/[^一二三四五六日]/g, '').split(''),
     cut: String(setting_('日誌截止時間', '10:00')),
     since: String(setting_('日誌追蹤起始日', '')),
     stale: +setting_('指示未回報提醒天數', 3) || 3
@@ -1228,7 +1265,7 @@ function applyMilestones_(me, d) {
   const base = stage === '提案' ? c['提案日'] : c['設計約簽約日'];
   if (!base) throw new Error('請先在案件資料填寫' + (stage === '提案' ? '提案日' : '設計約簽約日'));
   if (tryTable_('里程碑').some(x => x['案件ID'] === d.caseId && x['階段'] === stage)) throw new Error('這個案件已經有「' + stage + '」里程碑');
-  const tpl = tryTable_('範本_里程碑').filter(t => t['階段'] === stage && t['名稱']).sort((a, b) => (+a['順序'] || 0) - (+b['順序'] || 0));
+  const tpl = tryTable_('範本_里程碑').filter(t => t['階段'] === stage && t['名稱'] && t['啟用'] !== 'N').sort((a, b) => (+a['順序'] || 0) - (+b['順序'] || 0));
   const bossId = bossId_(), b = base.split('/').map(Number);
   tpl.forEach(t => {
     const dt = new Date(Date.UTC(b[0], b[1] - 1, b[2]) + (+t['相對天數'] || 0) * 864e5), z = x => (x < 10 ? '0' : '') + x;
@@ -1414,4 +1451,84 @@ function testPdf() {
   const l = readTable_('工程日誌').filter(x => x['日誌狀態'] === LS.SIGNED).pop();
   if (!l) { Logger.log('還沒有已簽核的日誌'); return; }
   Logger.log(makePdf_(l['日誌ID']).getUrl());
+}
+
+
+/* ========== 系統設定（公司設定、範本、經驗回流） ==========
+ * 誰可以改：ADMIN_ROLES（暫定只有 Boss；主管可看）。範本停用用「啟用＝N」，不刪資料。
+ */
+const ADMIN_ROLES = ['Boss'];
+const TPL = {
+  '範本_工序': { key: '工序ID', pre: 'W', label: '工序', cols: ['順序', '工種', '工序名稱', '標準工期（工作天）', '查驗點', '備註'], need: '工序名稱' },
+  '範本_查驗清單': { key: '檢查ID', pre: 'Q', label: '查驗清單', cols: ['查驗點', '順序', '檢查項目', '需拍照'], need: '檢查項目' },
+  '範本_開案SOP': { key: '項目ID', pre: 'SOP', label: '開案 SOP', cols: ['順序', '項目', '說明', '負責角色'], need: '項目' },
+  '範本_里程碑': { key: '里程碑ID', pre: 'M', label: '設計里程碑', cols: ['階段', '順序', '名稱', '負責角色', '相對天數', '說明'], need: '名稱' }
+};
+const SETTING_DEFAULTS = [
+  ['範本狀態', '示範（待 Boss 確認）', '範本確認後改成「正式」，畫面上的「示範」字樣就會拿掉'],
+  ['日誌填寫日', '一二三四五六', '施工中案件哪幾天要寫日誌（暫定）'],
+  ['日誌截止時間', '10:00', '隔天幾點前補上才不算漏填（暫定）'],
+  ['日誌追蹤起始日', '', '從哪天開始算漏填，空白＝預計開工日'],
+  ['指示未回報提醒天數', '3', '指示超過幾天沒回報就提醒（暫定）'],
+  ['延誤警告門檻（天）', '1', '工序晚幾天開始顯示延誤'],
+  ['保固年限', '1', '結案後保固幾年']
+];
+function isAdmin_(me) { return ADMIN_ROLES.indexOf(me.role) >= 0; }
+function admin_(me) {
+  if (!me.leader) throw new Error('只有主管可以看系統設定');
+  const cur = settings_(), desc = {};
+  tryTable_('公司設定').forEach(r => { desc[r['項目']] = r['說明']; });
+  const settings = SETTING_DEFAULTS.map(x => ({ key: x[0], value: cur[x[0]] !== undefined ? cur[x[0]] : x[1], note: desc[x[0]] || x[2], saved: cur[x[0]] !== undefined }));
+  Object.keys(cur).forEach(k => { if (!settings.some(x => x.key === k)) settings.push({ key: k, value: cur[k], note: desc[k] || '', saved: true }); });
+  const tpls = Object.keys(TPL).map(n => ({ name: n, label: TPL[n].label, key: TPL[n].key, cols: TPL[n].cols,
+    rows: tryTable_(n).filter(r => r[TPL[n].key]).map(r => { const o = { id: r[TPL[n].key], on: r['啟用'] !== 'N' }; TPL[n].cols.forEach(c => { o[c] = r[c] || ''; }); return o; })
+      .sort((a, b) => (n === '範本_查驗清單' ? (a['查驗點'] || '').localeCompare(b['查驗點'] || '') : n === '範本_里程碑' ? (a['階段'] === b['階段'] ? 0 : a['階段'] === '提案' ? -1 : 1) : 0) || (+a['順序'] || 0) - (+b['順序'] || 0)) }));
+  const cname = id => { const c = id ? tryTable_('案件').find(x => x['案件ID'] === id) : null; return c ? c['案件名稱'] : ''; };
+  const sugg = tryTable_('範本建議').map(r => ({ id: r['建議ID'], src: r['來源'], srcId: r['來源ID'], caseId: r['案件ID'], caseName: cname(r['案件ID']), tpl: r['範本'],
+    text: r['內容'], by: r['提出人'], at: r['提出時間'], status: r['狀態'] || '待處理', doneBy: r['處理人'], doneAt: r['處理時間'], note: r['處理備註'] })).reverse();
+  return { canEdit: isAdmin_(me), settings, tpls, sugg, trades: tryTable_('工種清單').filter(t => t['啟用'] !== 'N').map(t => t['工種']) };
+}
+function saveSetting_(me, d) {
+  if (!isAdmin_(me)) throw new Error('只有 Boss 可以改公司設定');
+  const key = String(d.key || '').trim(), val = String(d.value == null ? '' : d.value).trim();
+  if (!key) throw new Error('缺設定項目');
+  if (key === '日誌截止時間' && val && !/^\d{1,2}:\d{2}$/.test(val)) throw new Error('時間格式例如 10:00');
+  if (['指示未回報提醒天數', '延誤警告門檻（天）', '保固年限'].indexOf(key) >= 0 && !(+val >= 0)) throw new Error('請填數字');
+  if (key === '日誌填寫日' && !val.replace(/[^一二三四五六日]/g, '')) throw new Error('請填星期，例如：一二三四五六');
+  const def = SETTING_DEFAULTS.find(x => x[0] === key);
+  if (tryTable_('公司設定').some(r => r['項目'] === key)) updateRow_('公司設定', '項目', key, { '值': val });
+  else appendRow_('公司設定', { '項目': key, '值': val, '說明': def ? def[2] : '' });
+  _settings = null;
+  return true;
+}
+function saveTemplateRow_(me, d) {
+  if (!isAdmin_(me)) throw new Error('只有 Boss 可以改範本');
+  const T = TPL[d.tpl];
+  if (!T) throw new Error('沒有這個範本');
+  const f = d.fields || {}, row = {};
+  T.cols.forEach(c => { if (f[c] !== undefined) row[c] = String(f[c]).trim(); });
+  if (d.on !== undefined) row['啟用'] = d.on ? 'Y' : 'N';
+  if (row['工種'] && !tryTable_('工種清單').some(t => t['工種'] === row['工種'])) throw new Error('工種要先在「工種」清單裡：' + row['工種']);
+  if (row['需拍照'] !== undefined) row['需拍照'] = row['需拍照'] === 'Y' ? 'Y' : 'N';
+  if (d.id) { updateRow_(d.tpl, T.key, d.id, row); return d.id; }
+  if (!row[T.need]) throw new Error('請填寫' + T.need);
+  const id = T.pre + uid_().slice(0, 5).toUpperCase();
+  row[T.key] = id; if (row['啟用'] === undefined) row['啟用'] = 'Y';
+  appendRow_(d.tpl, row);
+  return id;
+}
+/** 經驗回流：任何人都可以從指示、日誌問題提出「建議納入範本」，Boss 決定採納或不採納（採納後由 Boss 在範本裡改） */
+function suggestTemplate_(me, d) {
+  const text = String(d.text || '').trim();
+  if (!text) throw new Error('請寫建議內容');
+  if (d.tpl && !TPL[d.tpl]) throw new Error('沒有這個範本');
+  appendRow_('範本建議', { '建議ID': uid_(), '來源': d.source || '手動', '來源ID': d.sourceId || '', '案件ID': d.caseId || '', '範本': d.tpl || '',
+    '內容': text, '提出人': me.id, '提出時間': now_(), '狀態': '待處理' });
+  return true;
+}
+function setSuggestion_(me, d) {
+  if (!isAdmin_(me)) throw new Error('只有 Boss 可以處理範本建議');
+  if (['已採納', '不採納', '待處理'].indexOf(d.status) < 0) throw new Error('狀態不正確');
+  updateRow_('範本建議', '建議ID', d.id, { '狀態': d.status, '處理人': me.id, '處理時間': now_(), '處理備註': d.note || '' });
+  return true;
 }

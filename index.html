@@ -309,14 +309,14 @@ function renderHome() {
   const late = open.filter(i => i.kind === 'log' ? i.overdue : (i.due && days(i.due, h.today) < 0 && !(i.kind === 'ins' && i.status === '已回報' && i.mine)));
   const act = actSeen();
   const doneToday = h.items.filter(i => i.kind === 'todo' && i.done && String(i.doneAt).slice(0, 10) === h.today);
-  $('#top').innerHTML = `<div class="brand"><span>浩森設計工作管理系統</span><span>${me.seePerf && !preview() ? '<a id="stats">統計</a>　' : ''}${leader() && !preview() ? '<a id="admin">⚙ 工種設定</a>　' : ''}<a id="logout">登出</a></span></div>
+  $('#top').innerHTML = `<div class="brand"><span>浩森設計工作管理系統</span><span>${me.seePerf && !preview() ? '<a id="stats">統計</a>　' : ''}${leader() && !preview() ? '<a id="admin">⚙ 設定</a>　' : ''}<a id="logout">登出</a></span></div>
     <h1 class="big">${esc(short(me.name))}工作總表</h1>
     <div class="sub"><span>${esc(md(h.today))}</span><b>還有 ${open.length} 件事沒做完</b>${late.length ? `<b class="bad">・${late.length} 件逾期</b>` : ''}</div>
     ${h.testMode && S.real && S.real.role === 'Boss' ? `<div class="pvwrap" id="pvwrap"><div class="pv" id="pvrow"><button data-as="" class="${!S.as ? 'on' : ''}">我的畫面</button>${h.people.filter(p => p.id !== S.real.id).map(p => `<button data-as="${p.id}" class="${S.as === p.id ? 'on' : ''}">看 ${esc(short(p.name))}</button>`).join('')}</div><div class="pvhint">左右滑動看其他人 ›</div></div>` : ''}
     ${preview() ? `<div class="pvbar">預覽中：這是 ${esc(me.name)} 看到的畫面（只能看，不能存檔）</div>` : ''}`;
   $$('[data-as]').forEach(b => b.onclick = async () => { const old = S.as; S.as = b.dataset.as; busy(true, '切換中…'); try { await reloadHome(); renderHome(); } catch (e) { S.as = old; toast(e); } busy(false); });
   pvOverflow();
-  if ($('#admin')) $('#admin').onclick = tradeAdmin;
+  if ($('#admin')) $('#admin').onclick = () => vAdmin();
   if ($('#stats')) $('#stats').onclick = () => vStats();
   $('#logout').onclick = logout;
 
@@ -541,8 +541,8 @@ function vPlan(tabs) {
   let h = tabs + `<div class="card"><div class="t">${locked ? '進度計畫已定案' : '進度計畫草擬中'}</div>
     <div class="s">${locked ? `${esc(short(pname(d.planLockedBy)))} 於 ${esc(String(d.planLocked).slice(0, 16))} 定案。之後改期只改「目前計畫」並須填原因，原計畫保留作比對。` : '日期可直接調整；主管「定案」後，原計畫會固定下來，之後改期要填原因。'}</div>
     <div class="lst mute">進度計畫用來比對預計與實際的差異，不需要主管逐項批准；現場由負責人推進。</div>
-    ${can ? `<div class="btns" style="flex-wrap:wrap">${!items.length ? '<button class="btn sec sm" id="ptpl">套用工序範本（示範）</button>' : ''}<button class="btn ghost sm" id="padd">＋ 新增工序</button>${leader() && !locked && items.length ? '<button class="btn pri sm" id="plock">定案</button>' : ''}</div>` : ''}</div>`;
-  if (!items.length) h += `<div class="soon"><b>還沒有工序</b>${can ? '可以先套用範本（示範內容，待 Boss 確認），再依案件調整。' : '等負責設計師排定。'}</div>`;
+    ${can ? `<div class="btns" style="flex-wrap:wrap">${!items.length ? '<button class="btn sec sm" id="ptpl">套用工序範本' + (S.home.tplDemo ? '（示範）' : '') + '</button>' : ''}<button class="btn ghost sm" id="padd">＋ 新增工序</button>${leader() && !locked && items.length ? '<button class="btn pri sm" id="plock">定案</button>' : ''}</div>` : ''}</div>`;
+  if (!items.length) h += `<div class="soon"><b>還沒有工序</b>${can ? '可以先套用範本' + (S.home.tplDemo ? '（示範內容，待 Boss 確認）' : '') + '，再依案件調整。' : '等負責設計師排定。'}</div>`;
   h += `<div class="plist">` + items.map((p, i) => {
     const [stt, cls] = st(p), hint = !p.actStart ? logHint(p) : '', moved = locked && (p.baseStart !== p.start || p.baseEnd !== p.end);
     const hist = d.planLog.filter(x => x.item === p.id);
@@ -578,7 +578,7 @@ function vPlan(tabs) {
   $$('.phead').forEach(e => e.onclick = () => { const r = e.parentElement, id = r.dataset.pid; S.popen[id] = !S.popen[id]; r.classList.toggle('open', S.popen[id]); });
   const find = id => d.plan.find(x => x.id === id);
   if ($('#padd')) $('#padd').onclick = () => planForm(null);
-  if ($('#ptpl')) $('#ptpl').onclick = () => planAct('applyTemplate', { caseId: S.cur }, '已套用範本（示範內容，請依案件調整）', `套用工序範本？\n範本是示範內容、尚未經 Boss 確認${d.info['預計開工日'] ? '；會依預計開工日 ' + d.info['預計開工日'] + ' 排出草稿日期' : '；案件沒有預計開工日，日期會留空'}。`);
+  if ($('#ptpl')) $('#ptpl').onclick = () => planAct('applyTemplate', { caseId: S.cur }, '已套用範本，請依案件調整', `套用工序範本？${S.home.tplDemo ? '\n範本是示範內容、尚未經 Boss 確認' : ''}${d.info['預計開工日'] ? '；會依預計開工日 ' + d.info['預計開工日'] + ' 排出草稿日期' : '；案件沒有預計開工日，日期會留空'}。`);
   if ($('#plock')) $('#plock').onclick = () => planAct('lockPlan', { caseId: S.cur }, '進度計畫已定案', '定案後原計畫會固定，之後改期都要填原因。確定定案？');
   $$('[data-pedit]').forEach(b => b.onclick = () => planForm(find(b.dataset.pedit)));
   $$('[data-pstart]').forEach(b => b.onclick = () => startForm(find(b.dataset.pstart)));
@@ -611,19 +611,19 @@ function checkForm(pid, cid) {
 function vSop(tabs) {
   const d = S.data, can = d.canPlan && !ro();
   let h = tabs + `<div class="card"><div class="t">開案前 SOP</div><div class="s">開工前要完成的準備事項。未完成不會擋住案件切換，只顯示提醒。</div>
-    ${!d.sop.length && can ? '<div class="btns"><button class="btn sec sm" id="sopApply">帶入 SOP 清單（示範範本，待 Boss 確認）</button></div>' : ''}</div>`;
+    ${!d.sop.length && can ? '<div class="btns"><button class="btn sec sm" id="sopApply">帶入 SOP 清單' + (S.home.tplDemo ? '（示範範本，待 Boss 確認）' : '') + '</button></div>' : ''}</div>`;
   h += d.sop.length ? `<div class="tl">` + d.sop.map(x => `<div class="todo" ${can ? `data-sop="${x.id}"` : ''}><div class="ck ${x.done ? 'on' : ''}">${x.done ? '✓' : ''}</div>
     <div style="flex:1;min-width:0"><div class="tt">${esc(x.label)}</div><div class="s">${[x.role ? '建議由 ' + esc(x.role) : '', x.done ? esc(short(pname(x.by))) + ' ' + esc(md(x.date)) + ' 完成' : '', x.note ? esc(x.note) : ''].filter(String).join('・')}</div></div></div>`).join('') + `</div>`
     : '<div class="empty">還沒有 SOP 清單</div>';
   $('#main').innerHTML = h;
-  if ($('#sopApply')) $('#sopApply').onclick = () => planAct('applySop', { caseId: S.cur }, '已帶入 SOP 清單（示範內容）');
+  if ($('#sopApply')) $('#sopApply').onclick = () => planAct('applySop', { caseId: S.cur }, '已帶入 SOP 清單');
   $$('[data-sop]').forEach(e => e.onclick = () => { const x = d.sop.find(y => y.id === e.dataset.sop); planAct('setSop', { id: x.id, done: !x.done }, x.done ? '已取消完成' : '已完成'); });
 }
 function vMs(tabs) {
   const d = S.data, can = d.canPlan && !ro(), c = d.info, me = ME().id;
   const hasP = d.ms.some(m => m.stage === '提案'), hasD = d.ms.some(m => m.stage === '設計');
   let h = tabs + `<div class="card"><div class="t">設計階段里程碑</div><div class="s">用「訂好日期」追蹤提案與設計進度。提案以提案日為基準、設計以設計約簽約日為基準。</div>
-    ${can ? `<div class="btns" style="flex-wrap:wrap">${!hasP ? `<button class="btn sec sm" id="msP" ${c['提案日'] ? '' : 'disabled'}>帶入提案里程碑${c['提案日'] ? '' : '（先填提案日）'}</button>` : ''}${!hasD ? `<button class="btn sec sm" id="msD" ${c['設計約簽約日'] ? '' : 'disabled'}>帶入設計里程碑${c['設計約簽約日'] ? '' : '（先填設計約簽約日）'}</button>` : ''}<button class="btn ghost sm" id="msAdd">＋ 新增</button></div><div class="hint">範本是示範內容，待 Boss 確認。</div>` : ''}</div>`;
+    ${can ? `<div class="btns" style="flex-wrap:wrap">${!hasP ? `<button class="btn sec sm" id="msP" ${c['提案日'] ? '' : 'disabled'}>帶入提案里程碑${c['提案日'] ? '' : '（先填提案日）'}</button>` : ''}${!hasD ? `<button class="btn sec sm" id="msD" ${c['設計約簽約日'] ? '' : 'disabled'}>帶入設計里程碑${c['設計約簽約日'] ? '' : '（先填設計約簽約日）'}</button>` : ''}<button class="btn ghost sm" id="msAdd">＋ 新增</button></div>${S.home.tplDemo ? '<div class="hint">範本是示範內容，待 Boss 確認。</div>' : ''}` : ''}</div>`;
   ['提案', '設計', ''].forEach(stg => {
     const g = d.ms.filter(m => stg ? m.stage === stg : !['提案', '設計'].includes(m.stage)); if (!g.length) return;
     h += `<div class="month">${stg || '其他'}・${g.filter(m => m.status === '已完成').length}/${g.length}</div><div class="tl">` + g.map(m => {
@@ -636,8 +636,8 @@ function vMs(tabs) {
   });
   if (!d.ms.length) h += '<div class="empty">還沒有里程碑</div>';
   $('#main').innerHTML = h;
-  if ($('#msP')) $('#msP').onclick = () => planAct('applyMilestones', { caseId: S.cur, stage: '提案' }, '已帶入提案里程碑（示範內容）');
-  if ($('#msD')) $('#msD').onclick = () => planAct('applyMilestones', { caseId: S.cur, stage: '設計' }, '已帶入設計里程碑（示範內容）');
+  if ($('#msP')) $('#msP').onclick = () => planAct('applyMilestones', { caseId: S.cur, stage: '提案' }, '已帶入提案里程碑');
+  if ($('#msD')) $('#msD').onclick = () => planAct('applyMilestones', { caseId: S.cur, stage: '設計' }, '已帶入設計里程碑');
   if ($('#msAdd')) $('#msAdd').onclick = () => msForm(null);
   $$('[data-mse]').forEach(e => e.onclick = () => msForm(d.ms.find(m => m.id === e.dataset.mse)));
   $$('[data-msd]').forEach(e => e.onclick = () => { const m = d.ms.find(x => x.id === e.dataset.msd); planAct('setMilestone', { id: m.id, act: m.status === '已完成' ? 'undo' : 'done' }, m.status === '已完成' ? '已取消完成' : '已完成'); });
@@ -736,6 +736,85 @@ function repairForm(x) {
       : { caseId: S.cur, date: $('#rd').value, text: $('#rt').value.trim(), owner: $('#ro').value };
     planAct('saveRepair', p, '已儲存');
   };
+}
+
+/* ===== 經驗回流：建議納入範本 ===== */
+const TPL_NAMES = { '範本_工序': '工序', '範本_查驗清單': '查驗清單', '範本_開案SOP': '開案 SOP', '範本_里程碑': '設計里程碑' };
+function suggForm(o) {
+  if (preview()) return guard();
+  sheet(`<h3>建議納入範本</h3><div class="s">把這次的經驗留下來。送出後由 Boss 決定是否改進範本，不會直接改動範本。</div>
+    <label>建議放進哪個範本</label><select id="sgt"><option value="">還不確定</option>${Object.keys(TPL_NAMES).map(k => `<option value="${k}">${TPL_NAMES[k]}</option>`).join('')}</select>
+    <label>建議內容</label><textarea id="sgx">${esc(o.text || '')}</textarea>
+    <div class="btns"><button class="btn pri" id="sggo">送出建議</button></div>`);
+  $('#sggo').onclick = async () => {
+    const text = $('#sgx').value.trim(); if (!text) return toast('請寫建議內容');
+    busy(true); try { await API('suggestTemplate', Object.assign({}, o, { tpl: $('#sgt').value, text })); closeSheet(); toast('已送出建議'); } catch (e) { toast(e); } finally { busy(false); }
+  };
+}
+
+/* ===== 系統設定（Boss 可改，主管可看；暫定） ===== */
+async function vAdmin(tab) {
+  S.atab = tab || S.atab || 'set';
+  busy(true, '讀取設定…');
+  let r; try { r = await API('admin', {}); } catch (e) { busy(false); return toast(e); } finally { busy(false); }
+  S.admin = r; S.cur = null;
+  $('#nav').style.display = 'none'; $('#fab').style.display = 'none';
+  $('#top').innerHTML = `<button class="back" id="backbtn">‹ 工作總表</button><h1>系統設定</h1><div class="sub"><span>${r.canEdit ? '修改後立即生效' : '只有 Boss 可以修改，你可以查看'}</span></div>`;
+  $('#backbtn').onclick = () => renderHome();
+  const T = S.atab, ed = r.canEdit && !preview();
+  const pend = r.sugg.filter(x => x.status === '待處理').length;
+  let h = `<div class="seg"><button data-at="set" class="${T === 'set' ? 'on' : ''}">公司設定</button><button data-at="tpl" class="${T === 'tpl' ? 'on' : ''}">範本</button><button data-at="trade" class="${T === 'trade' ? 'on' : ''}">工種</button><button data-at="sugg" class="${T === 'sugg' ? 'on' : ''}">建議${pend ? ' ' + pend : ''}</button></div>`;
+  if (T === 'set') h += `<div class="hint">標「暫定」的規則還沒正式定案，先用這些數字運作，之後在這裡調整就好。</div><div class="tl">${r.settings.map(x => `<div class="todo" ${ed ? `data-set="${esc(x.key)}"` : ''}><div style="flex:1;min-width:0"><div class="tt">${esc(x.key)}</div><div class="s">${esc(x.note || '')}${x.saved ? '' : '・目前用預設值'}</div></div><b style="font-weight:600;white-space:nowrap">${esc(x.value || '（空白）')}</b></div>`).join('')}</div>`;
+  if (T === 'tpl') {
+    S.tplSel = S.tplSel || r.tpls[0].name;
+    const t = r.tpls.find(x => x.name === S.tplSel);
+    const title = row => t.name === '範本_工序' ? `${row['順序']}. ${row['工序名稱']}` : t.name === '範本_查驗清單' ? `${row['查驗點']}・${row['檢查項目']}` : t.name === '範本_開案SOP' ? `${row['順序']}. ${row['項目']}` : `${row['階段']}・${row['名稱']}`;
+    const sub = row => t.name === '範本_工序' ? [row['工種'], row['標準工期（工作天）'] ? row['標準工期（工作天）'] + ' 工作天' : '', row['查驗點'] ? '查驗：' + row['查驗點'] : ''] : t.name === '範本_查驗清單' ? [row['需拍照'] === 'Y' ? '需拍照' : ''] : t.name === '範本_開案SOP' ? [row['負責角色'], row['說明']] : [row['負責角色'], '相對 ' + (row['相對天數'] || 0) + ' 天'];
+    h += `<div class="chips" style="margin:4px 0 10px">${r.tpls.map(x => `<span class="chip ${x.name === S.tplSel ? 'c-info' : 'c-mute'}" data-ts="${x.name}" style="cursor:pointer">${esc(x.label)} ${x.rows.length}</span>`).join(' ')}</div>
+      <div class="hint">範本狀態：${esc((r.settings.find(x => x.key === '範本狀態') || {}).value || '')}。停用的項目不會再被帶入新案件，已帶入的案件不受影響。</div>
+      <div class="tl">${t.rows.length ? t.rows.map(row => `<div class="todo" ${ed ? `data-tr="${row.id}"` : ''} style="${row.on ? '' : 'opacity:.5'}"><div style="flex:1;min-width:0"><div class="tt">${esc(title(row))}</div><div class="s">${sub(row).filter(String).map(esc).join('・')}</div></div>${row.on ? '' : chip('停用', 'c-mute')}</div>`).join('') : '<div class="empty">範本是空的</div>'}</div>
+      ${ed ? '<div class="btns"><button class="btn sec" id="tadd">＋ 新增一項</button></div>' : ''}`;
+  }
+  if (T === 'trade') h += `<div class="tpick" style="margin-top:6px">${S.home.trades.map(t => `<span class="tchip" style="background:${t.color};font-size:13px;padding:5px 10px">${esc(t.name)}</span>`).join('')}</div><div class="hint">工種會出現在寫日誌和排工序的選項裡。</div>${leader() && !preview() ? '<div class="btns"><button class="btn sec" id="tradd">＋ 新增工種</button></div>' : ''}`;
+  if (T === 'sugg') h += `<div class="hint">大家從指示、現場問題提出的改進建議。採納後請到「範本」把內容改進去。</div><div class="tl">${r.sugg.length ? r.sugg.map(x => `<div class="todo" ${ed && x.status === '待處理' ? `data-sg="${x.id}"` : ''}><div style="flex:1;min-width:0"><div class="tt">${esc(x.text)}</div><div class="s">${[esc(short(pname(x.by))), esc(md(x.at.slice(0, 10))), x.caseName ? esc(x.caseName) : '', x.tpl ? esc(TPL_NAMES[x.tpl] || x.tpl) : '', x.note ? '備註：' + esc(x.note) : ''].filter(String).join('・')}</div></div>${chip(x.status, x.status === '已採納' ? 'c-ok' : x.status === '不採納' ? 'c-mute' : 'c-warn')}</div>`).join('') : '<div class="empty">還沒有建議</div>'}</div>`;
+  $('#main').innerHTML = h;
+  $$('[data-at]').forEach(b => b.onclick = () => vAdmin(b.dataset.at));
+  $$('[data-ts]').forEach(b => b.onclick = () => { S.tplSel = b.dataset.ts; vAdmin('tpl'); });
+  $$('[data-set]').forEach(e => e.onclick = () => setForm(r.settings.find(x => x.key === e.dataset.set)));
+  $$('[data-tr]').forEach(e => e.onclick = () => tplForm(r.tpls.find(x => x.name === S.tplSel), r.tpls.find(x => x.name === S.tplSel).rows.find(x => x.id === e.dataset.tr)));
+  if ($('#tadd')) $('#tadd').onclick = () => tplForm(r.tpls.find(x => x.name === S.tplSel), null);
+  if ($('#tradd')) $('#tradd').onclick = tradeAdmin;
+  $$('[data-sg]').forEach(e => e.onclick = () => suggDecide(r.sugg.find(x => x.id === e.dataset.sg)));
+  window.scrollTo(0, 0);
+}
+async function adminAct(action, payload, msg) {
+  busy(true); try { await API(action, payload); closeSheet(); toast(msg); await reloadHome().catch(() => { }); vAdmin(); } catch (e) { toast(e); } finally { busy(false); }
+}
+function setForm(x) {
+  sheet(`<h3>${esc(x.key)}</h3><div class="s">${esc(x.note || '')}</div><label>值</label><input id="sv" value="${esc(x.value || '')}">
+    <div class="btns"><button class="btn pri" id="svgo">儲存</button></div>`);
+  $('#svgo').onclick = () => adminAct('saveSetting', { key: x.key, value: $('#sv').value }, '已儲存');
+}
+function tplForm(t, row) {
+  const v = k => esc(row ? row[k] : '');
+  const field = k => k === '工種' ? `<label>工種</label><select id="tf_${k}"><option value="">—</option>${S.admin.trades.map(n => `<option ${row && row[k] === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`
+    : k === '需拍照' ? `<label>需拍照</label><select id="tf_${k}"><option value="Y" ${row && row[k] === 'Y' ? 'selected' : ''}>要</option><option value="N" ${row && row[k] !== 'Y' ? 'selected' : ''}>不用</option></select>`
+    : k === '階段' ? `<label>階段</label><select id="tf_${k}">${['提案', '設計'].map(n => `<option ${row && row[k] === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`
+    : k === '說明' || k === '備註' ? `<label>${k}</label><textarea id="tf_${k}">${v(k)}</textarea>`
+    : `<label>${esc(k)}</label><input id="tf_${k}" value="${v(k)}" ${['順序', '標準工期（工作天）', '相對天數'].includes(k) ? 'inputmode="numeric"' : ''}>`;
+  const ids = t.cols.map(k => [k, 'tf_' + k.replace(/[（）]/g, '')]);
+  sheet(`<h3>${row ? '修改' : '新增'}${esc(t.label)}</h3>${t.cols.map(field).join('').replace(/id="tf_([^"]+)"/g, (m, k) => 'id="tf_' + k.replace(/[（）]/g, '') + '"')}
+    ${t.name === '範本_里程碑' ? '<div class="hint">相對天數：提案階段以提案日為 0，設計階段以設計約簽約日為 0，負數是之前。</div>' : ''}
+    <div class="btns">${row ? `<button class="btn ghost" id="tfon">${row.on ? '停用' : '恢復啟用'}</button>` : ''}<button class="btn pri" id="tfgo">儲存</button></div>`);
+  const fields = () => { const o = {}; ids.forEach(([k, id]) => { o[k] = document.getElementById(id).value; }); return o; };
+  $('#tfgo').onclick = () => adminAct('saveTemplateRow', { tpl: t.name, id: row ? row.id : '', fields: fields() }, '已儲存');
+  if (row) $('#tfon').onclick = () => adminAct('saveTemplateRow', { tpl: t.name, id: row.id, on: !row.on }, row.on ? '已停用' : '已恢復');
+}
+function suggDecide(x) {
+  sheet(`<h3>處理建議</h3><div class="s">${esc(x.text)}</div><label>備註</label><textarea id="sgn" placeholder="例如：已加到水電封板前查驗"></textarea>
+    <div class="btns"><button class="btn ghost" id="sgno">不採納</button><button class="btn pri" id="sgyes">採納</button></div>`);
+  $('#sgno').onclick = () => adminAct('setSuggestion', { id: x.id, status: '不採納', note: $('#sgn').value }, '已記錄');
+  $('#sgyes').onclick = () => adminAct('setSuggestion', { id: x.id, status: '已採納', note: $('#sgn').value }, '已採納，請到範本修改');
 }
 
 /* ===== 統計（可看績效者） ===== */
@@ -982,6 +1061,7 @@ function insHTML(i) {
     if (i.status === '待處理' && i.to === me) act = `<button class="btn ok sm" data-reply="${i.id}">回報結果</button>`;
     if (i.status === '已回報' && (i.from === me || S.real.role === 'Boss' && !S.as)) act = `<button class="btn ok sm" data-close="${i.id}">確認結案</button><button class="btn ghost sm" data-ret="${i.id}">退回</button>`;
   }
+  if (!preview() && i.status === '已結案') act += `<button class="btn ghost sm" data-sugg="${i.id}">建議納入範本</button>`;
   return `<div class="instr"><div class="row2"><div style="flex:1">${esc(i.text)}</div>${chip(i.status, INS_CLS[i.status])}</div>
     <div class="who">${esc(pname(i.from))} → ${esc(pname(i.to) || '未指定')}${i.due ? '・' + dueTxt(i.due, i.status === '已結案') : ''}${i.returns ? '・退回 ' + i.returns + ' 次' : ''}</div>
     ${i.reply ? `<div class="reply">${esc(i.reply)}</div>` : ''}${act ? `<div class="btns">${act}</div>` : ''}</div>`;
@@ -1003,6 +1083,7 @@ function bindIns() {
     $('#rgo').onclick = () => insAct(b.dataset.reply, 'reply', $('#rtxt').value, '已回報');
   });
   $$('[data-close]').forEach(b => b.onclick = () => insAct(b.dataset.close, 'close', '', '已結案'));
+  $$('[data-sugg]').forEach(b => b.onclick = () => { const i = S.data.ins.find(x => x.id === b.dataset.sugg); suggForm({ source: '主管指示', sourceId: i.id, caseId: S.cur, text: i.text + (i.reply ? '（處理：' + i.reply + '）' : '') }); });
   $$('[data-ret]').forEach(b => b.onclick = () => {
     sheet(`<h3>退回指示</h3><div class="s">說明還要補什麼。</div><label>退回原因</label><textarea id="rtxt"></textarea><div class="btns"><button class="btn pri" id="rgo">退回</button></div>`);
     $('#rgo').onclick = () => insAct(b.dataset.ret, 'return', $('#rtxt').value, '已退回');
@@ -1364,7 +1445,7 @@ function tradeAdmin() {
   $$('#tsw i').forEach(i => i.onclick = () => { $$('#tsw i').forEach(x => x.classList.remove('on')); i.classList.add('on'); color = i.dataset.c; });
   $('#tgo2').onclick = async () => {
     const name = $('#tn').value.trim(); if (!name) return toast('請填寫工種名稱');
-    busy(true); try { await API('saveTrade', { name, color }); await reloadHome(); tradeAdmin(); toast('已新增「' + name + '」'); } catch (e) { toast(e); } finally { busy(false); }
+    busy(true); try { await API('saveTrade', { name, color }); await reloadHome(); closeSheet(); if (S.admin) vAdmin('trade'); else tradeAdmin(); toast('已新增「' + name + '」'); } catch (e) { toast(e); } finally { busy(false); }
   };
 }
 
