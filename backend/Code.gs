@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v4.1（查驗紀錄、SOP、里程碑；客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
+ * 浩森設計工作管理系統｜後端 v4.2（文件頁：週報、工程履歷；查驗紀錄、SOP、里程碑；客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -91,7 +91,7 @@ function run_(email, action, payload) {
     me = Object.assign(userById_(payload.as), { preview: true });
   }
   const READ = { home: getHome_, case: getCase_, thumbs: getThumbs_, pdfView: pdfView_ };   // 只讀，預覽模式也可用
-  const SLOW = { pdfLog: pdfLog_, clientPdf: clientPdf_ };   // 產生 PDF 較久，不鎖住其他人
+  const SLOW = { pdfLog: pdfLog_, clientPdf: clientPdf_, reportPdf: reportPdf_ };   // 產生 PDF 較久，不鎖住其他人
   const WRITE = {
     saveLog: saveLog_, updateLog: updateLog_, deletePhoto: deletePhoto_,
     submitLog: submitLog_, confirmLog: confirmLog_, signLog: signLog_, returnLog: returnLog_,
@@ -418,6 +418,8 @@ function getCase_(me, p) {
   })).sort((a, b) => (a.due || '9').localeCompare(b.due || '9') || a.order - b.order);
   return { info: c, canEdit: canEditCase_(me, c), canPlan: canPlan_(me, c), logs, ins, todos, plan, planLog, meetings, cins, checks, checkTpl, sop, ms,
     settings: settings_(),
+    docs: tryTable_('文件紀錄').filter(x => x['案件ID'] === p.id).map(x => ({ id: x['文件ID'], date: x['日期'], name: x['文件名稱'], type: x['文件類型'], url: x['檔案連結'], by: x['產生人'], at: x['產生時間'] || x['日期'] }))
+      .sort((a, b) => String(b.at).localeCompare(String(a.at))),
     planLocked: c['進度定案時間'] || '', planLockedBy: c['進度定案人'] || '' };
 }
 
@@ -1181,6 +1183,70 @@ function clientPdf_(me, d) {
   }
   if (!canCI_(me, c, null) && !me.leader) throw new Error('只有負責設計師或主管可以產生');
   return pdfOut_(saveDoc_(me, c, '客戶確認', name, html, type, src));
+}
+
+/* ========== 文件頁：週報、工程履歷 ==========
+ * 只收「已簽核」的日誌（對外內容一致）；照片數量設上限避免檔案過大，完整照片在雲端資料夾。
+ */
+function logSection_(l, photos, insAll, maxPh) {
+  const ph = activePhotos_(l['日誌ID'], photos).slice(0, maxPh);
+  let t = '';
+  for (let k = 0; k < ph.length; k += 2) t += '<tr>' + [ph[k], ph[k + 1]].map(p => p ? '<td><img src="' + photoData_(p['照片']) + '" width="230"><div class="pn">' + h_(p['說明'] || '') + '</div></td>' : '<td></td>').join('') + '</tr>';
+  const ins = insAll.filter(i => i['日誌ID'] === l['日誌ID']);
+  return '<h3>' + h_(l['日期']) + '　' + h_(String(l['工種'] || '').split(/\s*,\s*/).join('、')) + '　<span class="im">' + h_(pname_(l['填寫人'])) + '</span></h3>'
+    + '<div class="txt">' + (h_(l['今日狀況']) || '（無）') + '</div>'
+    + (l['發現問題'] ? '<div class="issue">' + h_(l['發現問題']) + '</div>' : '')
+    + (t ? '<table class="ph">' + t + '</table>' : '')
+    + ins.map(i => '<div class="item"><div class="txt">主管指示：' + h_(i['指示內容']) + '</div><div class="im">' + h_(insStatus_(i['狀態'])) + (i['負責人'] ? '・負責 ' + h_(pname_(i['負責人'])) : '') + (i['回報內容'] ? '・回報：' + h_(i['回報內容']) : '') + '</div></div>').join('');
+}
+function planTable_(items) {
+  if (!items.length) return '<div class="im">尚未排定進度計畫</div>';
+  return '<table class="grid"><tr><th>工序</th><th>計畫</th><th>實際</th><th>狀態</th></tr>' + items.map(r =>
+    '<tr><td>' + h_(r['工序名稱']) + '</td><td>' + h_(String(r['目前計畫開始']).slice(5)) + '–' + h_(String(r['目前計畫完成']).slice(5)) + '</td><td>'
+    + h_(String(r['實際開始'] || '').slice(5)) + (r['實際完成'] ? '–' + h_(String(r['實際完成']).slice(5)) : '') + '</td><td>' + (r['實際完成'] ? '完成' : r['實際開始'] ? '進行中' : '未開始') + '</td></tr>').join('') + '</table>';
+}
+
+/** 週報（d.from～d.to）或工程履歷（d.kind = 'resume'） */
+function reportPdf_(me, d) {
+  const c = planGuard_(me, d.caseId), cid = d.caseId;
+  const photos = readTable_('日誌照片'), insAll = readTable_('主管指示').filter(i => i['案件ID'] === cid && i['指示內容']);
+  const logs = readTable_('工程日誌').filter(l => l['案件ID'] === cid && logStatus_(l) === LS.SIGNED).sort((a, b) => (a['日期'] + a['建立時間']).localeCompare(b['日期'] + b['建立時間']));
+  const plan = tryTable_('進度計畫').filter(r => r['案件ID'] === cid && r['狀態'] !== '取消').sort((a, b) => (+a['順序'] || 0) - (+b['順序'] || 0));
+  const cis = tryTable_('客戶指示').filter(x => x['案件ID'] === cid);
+  const info = '<table class="info"><tr><td class="k">案件</td><td>' + h_(c['案件名稱']) + '</td></tr><tr><td class="k">施工地點</td><td>' + h_(c['地址']) + '</td></tr><tr><td class="k">負責設計師</td><td>' + h_(pname_(c['負責設計師'])) + '</td></tr>';
+  let html, name, type, src;
+  if (d.kind === 'resume') {
+    const meetings = tryTable_('會議').filter(m => m['案件ID'] === cid).sort((a, b) => String(a['日期']).localeCompare(String(b['日期'])));
+    const checks = tryTable_('查驗紀錄').filter(x => x['案件ID'] === cid && x['完成'] === 'Y');
+    const imp = cis.filter(x => x['影響費用或工期'] === 'Y' && x['確認狀態'] === '已確認'), sum = k => imp.reduce((a, x) => a + (+x[k] || 0), 0);
+    let budget = 60, body = '';
+    logs.forEach(l => { const n = Math.min(4, budget); budget -= Math.min(n, activePhotos_(l['日誌ID'], photos).length); body += logSection_(l, photos, insAll, n); });
+    html = docHtml_('工程履歷', c['案件名稱'],
+      info + (c['預計開工日'] ? '<tr><td class="k">預計工期</td><td>' + h_(c['預計開工日']) + '～' + h_(c['預計完工日']) + '</td></tr>' : '') + (c['實際完工日'] ? '<tr><td class="k">實際完工</td><td>' + h_(c['實際完工日']) + '</td></tr>' : '') + '</table>'
+      + '<h2>工程進度</h2>' + planTable_(plan)
+      + '<h2>追加減（客戶已確認）</h2>' + (imp.length ? imp.map(ciBlock_).join('') + '<div class="im">合計：' + sum('追加減金額') + ' 元，工期 ' + sum('影響工期天數') + ' 天</div>' : '<div class="im">無</div>')
+      + '<h2>會議記錄</h2>' + (meetings.length ? meetings.map(m => '<h3>' + h_(m['日期']) + '　' + h_(m['會議名稱']) + '</h3>' + (m['AI摘要'] ? '<div class="txt">' + h_(m['AI摘要']) + '</div>' : '') + cis.filter(x => x['會議ID'] === m['會議ID']).map(ciBlock_).join('')).join('') : '<div class="im">無</div>')
+      + '<h2>其他客戶指示</h2>' + (cis.filter(x => !x['會議ID']).map(ciBlock_).join('') || '<div class="im">無</div>')
+      + '<h2>查驗紀錄</h2>' + (checks.length ? '<table class="grid"><tr><th>查驗點</th><th>項目</th><th>結果</th><th>說明</th></tr>' + checks.map(x => '<tr><td>' + h_(x['查驗點']) + '</td><td>' + h_(x['檢查項目']) + '</td><td>' + h_(x['狀態']) + '</td><td>' + h_(x['備註']) + '</td></tr>').join('') + '</table>' : '<div class="im">無</div>')
+      + '<h2 class="pb">工程日誌（' + logs.length + ' 篇）</h2>' + (body || '<div class="im">無已簽核日誌</div>')
+      + '<div class="im">照片最多收錄 60 張，完整照片請見案件雲端資料夾。</div>');
+    name = '工程履歷_' + c['案件名稱'] + '_' + today_().replace(/\//g, '-') + '.pdf'; type = '工程履歷'; src = cid;
+  } else {
+    const from = ymd_(d.from), to = ymd_(d.to);
+    if (!from || !to || to < from) throw new Error('請選擇正確的日期區間');
+    const inRange = logs.filter(l => l['日期'] >= from && l['日期'] <= to);
+    const openIns = insAll.filter(i => insStatus_(i['狀態']) !== IS.CLOSED);
+    const ciR = cis.filter(x => x['日期'] >= from && x['日期'] <= to);
+    const next = plan.filter(r => !r['實際完成'] && r['目前計畫開始'] && r['目前計畫開始'] <= fmt_(new Date(Date.now() + 14 * 864e5), 'yyyy/MM/dd'));
+    html = docHtml_('工程週報', c['案件名稱'] + '　' + from + '～' + to,
+      info + '<tr><td class="k">期間</td><td>' + h_(from) + '～' + h_(to) + '</td></tr></table>'
+      + '<h2>本期施工（' + inRange.length + ' 篇已簽核日誌）</h2>' + (inRange.map(l => logSection_(l, photos, insAll, 2)).join('') || '<div class="im">本期沒有已簽核的日誌</div>')
+      + '<h2>追蹤中事項</h2>' + (openIns.length ? openIns.map(i => '<div class="item"><div class="txt">' + h_(i['指示內容']) + '</div><div class="im">' + h_(insStatus_(i['狀態'])) + (i['期限'] ? '・期限 ' + h_(i['期限']) : '') + '</div></div>').join('') : '<div class="im">無</div>')
+      + '<h2>本期客戶指示</h2>' + (ciR.map(ciBlock_).join('') || '<div class="im">無</div>')
+      + '<h2>接下來兩週預計</h2>' + planTable_(next));
+    name = '工程週報_' + c['案件名稱'] + '_' + from.replace(/\//g, '-') + '_' + to.replace(/\//g, '-') + '.pdf'; type = '週報'; src = cid + ':' + from + ':' + to;
+  }
+  return pdfOut_(saveDoc_(me, c, d.kind === 'resume' ? '工程履歷' : '週報', name, html, type, src));
 }
 
 /** 第一次安裝或新增權限時，在編輯器選這個函式按「執行」完成授權 */

@@ -482,7 +482,7 @@ function render() {
   $('#nav').innerHTML = TABS.map(([k, n, ic]) => { const b = k === 'instr' ? nIns : k === 'log' ? nLog : 0; return `<button data-tab="${k}" class="${S.tab === k ? 'on' : ''}"><span class="ic">${ic}</span>${n}${b ? `<span class="badge">${b}</span>` : ''}</button>`; }).join('');
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
   const fab = $('#fab'); fab.className = 'fab'; fab.style.display = 'none';
-  ({ sum: vSum, log: vLog, instr: vInstr, client: vClient, prog: vProg, docs: vSoon })[S.tab]();
+  ({ sum: vSum, log: vLog, instr: vInstr, client: vClient, prog: vProg, docs: vDocs })[S.tab]();
   if (preview()) return;
   if (S.tab === 'log') { fab.style.display = 'block'; fab.textContent = '＋ 新增日誌'; fab.onclick = () => logForm(null); }
   if (S.tab === 'instr' && leader()) { fab.style.display = 'block'; fab.textContent = '＋ 下指示'; fab.onclick = () => newIns(''); }
@@ -1087,6 +1087,34 @@ async function docShare(action, payload) {
       <a class="btn ghost" href="${esc(r.url)}" target="_blank" rel="noopener" style="text-align:center;text-decoration:none">在雲端資料夾開啟</a></div>`);
   if (can) $('#dsgo').onclick = async () => { try { await navigator.share({ files: [file], title: r.name }); closeSheet(); toast('已完成分享操作'); } catch (e) { if (e && e.name !== 'AbortError') toast('分享失敗，請改用下載'); } };
   refreshCase().then(() => { if (S.tab !== 'log') render(); }).catch(() => { });
+}
+
+/* ===== 文件頁：所有 PDF 集中、週報與工程履歷 ===== */
+function vDocs() {
+  const d = S.data, can = d.canPlan && !preview();
+  const logDocs = d.logs.filter(l => l.hasPdf).map(l => ({ kind: 'log', id: l.id, name: '工程日誌 ' + md(l.date) + '（' + l.trades.join('、') + '）', type: '工程日誌', at: l.pdfAt || l.date }));
+  const all = [...d.docs.map(x => Object.assign({ kind: 'doc' }, x)), ...logDocs].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const types = ['全部', ...new Set(all.map(x => x.type))];
+  S.dtype = types.includes(S.dtype) ? S.dtype : '全部';
+  let h = `<div class="card"><div class="t">產生報告</div><div class="s">只收錄已簽核的日誌。產生後自動存進案件雲端資料夾。</div>
+    ${can ? '<div class="btns"><button class="btn pri sm" id="mkWeek">週報</button><button class="btn sec sm" id="mkResume">工程履歷（整本）</button></div>' : '<div class="hint">由負責設計師或主管產生。</div>'}</div>`;
+  h += `<h2>文件<small>${all.length} 份</small></h2>`;
+  if (types.length > 2) h += `<div class="seg" style="flex-wrap:wrap">${types.map(t => `<button data-dt="${esc(t)}" class="${S.dtype === t ? 'on' : ''}">${esc(t)}</button>`).join('')}</div>`;
+  const list = all.filter(x => S.dtype === '全部' || x.type === S.dtype);
+  h += list.length ? `<div class="tl">` + list.map(x => `<div class="todo" ${x.kind === 'log' ? `data-dlog="${x.id}"` : `data-durl="${esc(x.url)}"`}><div class="ck lg">PDF</div>
+    <div style="flex:1;min-width:0"><div class="tt">${esc(x.name)}</div><div class="s">${esc(x.type)}・${esc(String(x.at).slice(0, 16))}${x.by ? '・' + esc(short(pname(x.by))) : ''}</div></div></div>`).join('') + `</div>`
+    : '<div class="empty">還沒有文件</div>';
+  $('#main').innerHTML = h;
+  $$('[data-dt]').forEach(b => b.onclick = () => { S.dtype = b.dataset.dt; vDocs(); });
+  $$('[data-dlog]').forEach(e => e.onclick = () => viewPdf(e.dataset.dlog));
+  $$('[data-durl]').forEach(e => e.onclick = () => window.open(e.dataset.durl, '_blank'));
+  if ($('#mkResume')) $('#mkResume').onclick = () => { if (confirm('產生整本工程履歷？日誌多的案件約需 1～3 分鐘。')) docShare('reportPdf', { caseId: S.cur, kind: 'resume' }); };
+  if ($('#mkWeek')) $('#mkWeek').onclick = () => {
+    const t = S.home.today, mon = addDays(t, -((new Date(t.replace(/\//g, '-')).getDay() + 6) % 7));
+    sheet(`<h3>產生週報</h3><div class="dgrid"><div><label>從</label><input type="date" id="wf" value="${toInput(mon)}"></div><div><label>到</label><input type="date" id="wt" value="${toInput(t)}"></div></div>
+      <div class="hint">包含期間內已簽核的日誌、追蹤中的指示、客戶指示、接下來兩週預計的工序。</div><div class="btns"><button class="btn pri" id="wgo">產生</button></div>`);
+    $('#wgo').onclick = () => { const f = $('#wf').value, to = $('#wt').value; if (!f || !to || to < f) return toast('請選擇正確的日期區間'); docShare('reportPdf', { caseId: S.cur, kind: 'week', from: f, to }); };
+  };
 }
 
 function vSoon() {
