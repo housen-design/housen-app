@@ -165,6 +165,8 @@ textarea{min-height:84px;resize:vertical}
 .cdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bad);margin-left:6px;vertical-align:middle}
 /* 驗收修正 2026-11-19：點擊範圍、滑動提示、長字換行、橫式版面、更新失敗提示 */
 .pv button{min-height:40px;padding:9px 14px;font-size:13px}
+.fsec{margin:18px 0 -4px;font-size:12px;color:var(--gold,#AF9263);letter-spacing:.12em;font-weight:500;border-top:1px solid var(--line);padding-top:12px}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.dgrid>div{min-width:0}.dgrid input{width:100%}
 .pvwrap{position:relative}
 .pvwrap.ovf:after{content:"";position:absolute;right:0;top:10px;height:42px;width:40px;background:linear-gradient(90deg,rgba(247,244,239,0),var(--app) 80%);pointer-events:none}
 .pvwrap.end:after{display:none}
@@ -439,7 +441,7 @@ function vSum() {
   ${l ? `<div class="card tap" id="lastlog"><div class="t">${esc(md(l.date))}　${l.trades.map(t => `<span class="tchip" style="background:${tcolor(t)}">${esc(t)}</span>`).join(' ')}</div>
      <div class="s">${esc(pname(l.by))}｜${esc(l.text)}</div>${l.photos.length ? `<div class="s">📷 ${l.photos.length} 張照片</div>` : ''}</div>`
       : '<div class="card"><div class="empty" style="padding:8px">還沒有日誌</div></div>'}
-  <h2>案件資料</h2>
+  <h2>案件資料${S.data.canEdit && !preview() ? '<span class="act" id="editCase">編輯</span>' : ''}</h2>
   <div class="card"><dl class="info">
     ${row('客戶', esc(c['客戶姓名']))}
     ${row('電話', c['客戶電話'] ? `<a href="tel:${esc(c['客戶電話'])}">${esc(c['客戶電話'])}</a>` : '')}
@@ -447,13 +449,20 @@ function vSum() {
     ${row('地址', esc(c['地址']))}
     ${row('類型', esc(c['類型']))}
     ${row('來源', esc(c['來源']))}
-    ${row('建立日期', esc(c['建立日期']))}
-    ${row('提案日', esc(c['提案日']))}
-    ${row('預計開工', esc(c['預計開工日']))}
-    ${row('預計完工', esc(c['預計完工日']))}
+    ${row('負責設計師', esc(pname(c['負責設計師'])))}
+  </dl></div>
+  <h2>重要日期</h2>
+  <div class="card"><dl class="info">
+    ${CASE_DATES.map(k => row(k, esc(c[k]))).join('')}
+    ${CASE_DATES.some(k => c[k]) ? '' : `<dt></dt><dd style="color:var(--muted)">尚未填寫${S.data.canEdit && !preview() ? '，按上方「編輯」補上' : ''}</dd>`}
+  </dl></div>
+  <h2>其他</h2>
+  <div class="card"><dl class="info">
     ${ME().seeMoney ? row('設計費', money(c['設計費'])) + row('工程金額', money(c['工程金額'])) : ''}
-    ${row('雲端資料夾', c['Drive資料夾'] ? `<a href="${esc(c['Drive資料夾'])}" target="_blank">開啟</a>` : '')}
+    <dt>雲端資料夾</dt><dd>${c['Drive資料夾'] ? `<a href="${esc(c['Drive資料夾'])}" target="_blank" rel="noopener">開啟資料夾</a>` : '<span style="color:var(--muted)">未指定（第一次產生日誌 PDF 時會自動建立）</span>'}</dd>
     ${row('備註', esc(c['備註']))}
+    ${row('建立日期', esc(c['建立日期']))}
+    ${c['最後修改時間'] ? row('最後修改', esc(short(pname(c['最後修改人']))) + ' ' + esc(String(c['最後修改時間']).slice(0, 16))) : ''}
   </dl></div>
   ${leader() && !preview() ? `<h2>案件階段</h2><div class="seg">${STAGES.map(s => `<button data-st="${s}" class="${c['階段'] === s ? 'on' : ''}">${s}</button>`).join('')}</div>` : ''}
   ${preview() ? '' : `<div class="btns"><button class="btn pri" id="qaLog">＋ 寫日誌</button>${leader() ? '<button class="btn sec" id="qaIns">＋ 下指示</button>' : ''}</div>`}`;
@@ -461,6 +470,7 @@ function vSum() {
   if ($('#qaLog')) $('#qaLog').onclick = () => logForm(null);
   if ($('#qaIns')) $('#qaIns').onclick = () => newIns('');
   if ($('#caseTodo')) $('#caseTodo').onclick = () => newTodo(S.cur);
+  if ($('#editCase')) $('#editCase').onclick = caseForm;
   bindItems();
   $$('[data-st]').forEach(b => b.onclick = async () => {
     if (b.dataset.st === c['階段']) return;
@@ -758,6 +768,51 @@ async function saveLogNow(submit) {
     const id = NL.id ? await API('updateLog', Object.assign({ id: NL.id }, p)) : await API('saveLog', p);
     await refreshCase(); closeSheet(); S.tab = 'log'; S.open = { [id]: true }; render(); toast(submit ? '已送出' : NL.id ? '已儲存修改' : '已存成草稿'); reloadHome().catch(() => { });
   } catch (e) { toast(e); } finally { busy(false); }
+}
+
+const CASE_DATES = ['提案日', '設計約簽約日', '工程約簽約日', '預計開工日', '預計完工日', '實際完工日', '結案日', '保固到期日'];
+const CASE_TYPES = ['住宅', '商業空間', '旅宿', '其他'];
+const CASE_SOURCES = ['轉介', '自行開發', '官網／LINE', '舊客回購'];
+const opts = (list, cur) => ['', ...list, ...(cur && !list.includes(cur) ? [cur] : [])].map(o => `<option ${o === cur ? 'selected' : ''}>${esc(o)}</option>`).join('');
+const toInput = v => String(v || '').slice(0, 10).replace(/\//g, '-');
+
+/** 修改案件資料（主管、行政、負責設計師；金額限可看金額者） */
+function caseForm() {
+  if (guard()) return;
+  const c = S.data.info, money = ME().seeMoney;
+  const ds = S.home.people.filter(p => p.role === '設計師' || p.role === 'Boss' || p.role === '主管');
+  const inp = (k, id, type, ph) => `<label>${k}</label><input id="${id}" ${type ? `type="${type}"` : ''} value="${esc(type === 'date' ? toInput(c[k]) : (c[k] || ''))}" ${ph ? `placeholder="${ph}"` : ''}>`;
+  sheet(`<h3>編輯案件資料</h3><div class="s">${esc(c['案件名稱'])}・只會存有改動的欄位，並記錄修改人</div>
+    <div class="fsec">基本資料</div>
+    ${inp('案件名稱', 'f_name')}${inp('客戶姓名', 'f_client')}${inp('客戶電話', 'f_phone', 'tel')}${inp('客戶LINE', 'f_line')}${inp('地址', 'f_addr')}
+    <label>類型</label><select id="f_type">${opts(CASE_TYPES, c['類型'])}</select>
+    <label>來源</label><select id="f_src">${opts(CASE_SOURCES, c['來源'])}</select>
+    <label>負責設計師</label><select id="f_des"><option value=""></option>${ds.map(p => `<option value="${p.id}" ${p.id === c['負責設計師'] ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+    <div class="fsec">重要日期</div>
+    <div class="dgrid">${CASE_DATES.map((k, i) => `<div><label>${k}</label><input id="f_d${i}" type="date" value="${esc(toInput(c[k]))}"></div>`).join('')}</div>
+    <div class="fsec">其他</div>
+    ${money ? `<div class="dgrid"><div><label>設計費</label><input id="f_fee" inputmode="numeric" value="${esc(c['設計費'] || '')}"></div><div><label>工程金額</label><input id="f_amt" inputmode="numeric" value="${esc(c['工程金額'] || '')}"></div></div>` : ''}
+    <label>雲端資料夾網址</label><input id="f_drive" value="${esc(c['Drive資料夾'] || '')}" placeholder="貼上 Google 雲端硬碟資料夾網址">
+    <div class="hint">留空的話，第一次產生日誌 PDF 時系統會自動建立資料夾。</div>
+    <label>備註</label><textarea id="f_note">${esc(c['備註'] || '')}</textarea>
+    <div class="btns"><button class="btn pri" id="f_go">儲存</button></div>`);
+  $('#f_go').onclick = async () => {
+    const fields = {
+      '案件名稱': $('#f_name').value.trim(), '客戶姓名': $('#f_client').value.trim(), '客戶電話': $('#f_phone').value.trim(),
+      '客戶LINE': $('#f_line').value.trim(), '地址': $('#f_addr').value.trim(), '類型': $('#f_type').value, '來源': $('#f_src').value,
+      '負責設計師': $('#f_des').value, 'Drive資料夾': $('#f_drive').value.trim(), '備註': $('#f_note').value.trim()
+    };
+    CASE_DATES.forEach((k, i) => fields[k] = $('#f_d' + i).value);
+    if (money) { fields['設計費'] = $('#f_fee').value.trim(); fields['工程金額'] = $('#f_amt').value.trim(); }
+    if (!fields['案件名稱']) return toast('案件名稱不能空白');
+    if (fields['預計開工日'] && fields['預計完工日'] && fields['預計完工日'] < fields['預計開工日']) return toast('預計完工日不能早於預計開工日');
+    busy(true, '儲存中…');
+    try {
+      const r = await API('saveCaseInfo', { id: S.cur, fields });
+      await refreshCase(); closeSheet(); render(); reloadHome().catch(() => { });
+      toast(r.changed.length ? '已更新：' + r.changed.join('、') : '沒有變更');
+    } catch (e) { toast(e); } finally { busy(false); }
+  };
 }
 
 function newCase() {

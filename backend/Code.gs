@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v3.1（日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
+ * 浩森設計工作管理系統｜後端 v3.2（案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -96,7 +96,7 @@ function run_(email, action, payload) {
     submitLog: submitLog_, confirmLog: confirmLog_, signLog: signLog_, returnLog: returnLog_,
     escalateLog: escalateLog_, seenLog: seenLog_, shareLog: shareLog_,
     saveIns: saveIns_, actIns: actIns_, saveTodo: saveTodo_, setTodo: setTodo_,
-    saveCase: saveCase_, setStage: setStage_, saveTrade: saveTrade_
+    saveCase: saveCase_, saveCaseInfo: saveCaseInfo_, setStage: setStage_, saveTrade: saveTrade_
   };
   if (READ[action]) return READ[action](me, payload);
   if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); return SLOW[action](me, payload); }
@@ -313,7 +313,7 @@ function getCase_(me, p) {
   const todos = readTable_('待辦').filter(t => t['案件ID'] === p.id).map(t => ({
     id: t['待辦ID'], text: t['內容'], to: t['負責人'], due: t['期限'], done: t['狀態'] === '已完成', from: t['建立人']
   }));
-  return { info: c, logs, ins, todos };
+  return { info: c, canEdit: canEditCase_(me, c), logs, ins, todos };
 }
 
 function getThumbs_(me, p) {
@@ -641,8 +641,45 @@ function saveCase_(me, d) {
 }
 
 function setStage_(me, d) {
-  updateRow_('案件', '案件ID', d.id, { '階段': d.stage });
+  if (!me.leader) throw new Error('只有主管可以改案件階段');
+  updateRow_('案件', '案件ID', d.id, { '階段': d.stage, '最後修改時間': now_(), '最後修改人': me.id });
   return true;
+}
+
+/* ========== 案件主檔：修改案件資料 ========== */
+const CASE_TEXT = ['案件名稱', '客戶姓名', '客戶電話', '客戶LINE', '地址', '類型', '來源', '負責設計師', 'Drive資料夾', '備註'];
+const CASE_DATES = ['提案日', '設計約簽約日', '工程約簽約日', '預計開工日', '預計完工日', '實際完工日', '結案日', '保固到期日'];
+const CASE_MONEY = ['設計費', '工程金額'];
+/** 可修改案件資料：主管、行政、該案負責設計師（金額另需「可看金額」） */
+function canEditCase_(me, c) { return me.leader || me.role === '行政' || (!!c && c['負責設計師'] === me.id); }
+
+/** 只寫入有變動的欄位，並記錄最後修改時間與修改人 */
+function saveCaseInfo_(me, d) {
+  const c = caseRow_(d.id);
+  if (!c) throw new Error('找不到案件');
+  if (!canEditCase_(me, c)) throw new Error('只有主管、行政或案件負責設計師可以修改案件資料');
+  const f = d.fields || {}, patch = {};
+  CASE_TEXT.forEach(k => { if (k in f) patch[k] = String(f[k] == null ? '' : f[k]).trim(); });
+  CASE_DATES.forEach(k => { if (k in f) patch[k] = ymd_(String(f[k] || '').trim()); });
+  if (me.seeMoney) CASE_MONEY.forEach(k => { if (k in f) patch[k] = String(f[k] == null ? '' : f[k]).replace(/[^0-9.]/g, ''); });
+  if ('案件名稱' in patch && !patch['案件名稱']) throw new Error('案件名稱不能空白');
+  if (patch['負責設計師'] && !people_().some(p => p.id === patch['負責設計師'] && p.active)) throw new Error('負責設計師不在人員名單');
+  const v = k => k in patch ? patch[k] : (c[k] || '');
+  if (v('預計開工日') && v('預計完工日') && v('預計完工日') < v('預計開工日')) throw new Error('預計完工日不能早於預計開工日');
+  CASE_DATES.forEach(k => { if (patch[k] && !/^\d{4}\/\d{2}\/\d{2}$/.test(patch[k])) throw new Error(k + '格式不對'); });
+  if (patch['Drive資料夾'] && patch['Drive資料夾'] !== c['Drive資料夾']) {
+    const m = patch['Drive資料夾'].match(/folders\/([\w-]+)/);
+    if (!m) throw new Error('請貼上 Google 雲端硬碟「資料夾」的網址（網址裡要有 /folders/）');
+    try { patch['Drive資料夾'] = DriveApp.getFolderById(m[1]).getUrl(); }
+    catch (e) { throw new Error('打不開這個資料夾：請確認網址正確，且 Boss 的帳號有權限'); }
+  }
+  const changed = Object.keys(patch).filter(k => String(c[k] == null ? '' : c[k]) !== patch[k]);
+  if (!changed.length) return { changed: [] };
+  const out = {};
+  changed.forEach(k => out[k] = patch[k]);
+  out['最後修改時間'] = now_(); out['最後修改人'] = me.id;
+  updateRow_('案件', '案件ID', d.id, out);
+  return { changed: changed };
 }
 
 /** 新增工種（主管） */
