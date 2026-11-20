@@ -173,6 +173,7 @@ textarea{min-height:84px;resize:vertical}
 .chkr{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:13px;cursor:pointer}.chkr.bad{color:var(--bad)}.chkr small{color:var(--warn);font-size:11px}
 .cb{flex:0 0 20px;height:20px;border:1.5px solid var(--line);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px}.cb.on{background:var(--ok);border-color:var(--ok);color:#fff}
 .ck.on{background:var(--ok);border-color:var(--ok);color:#fff}
+body.syncing::after{content:'更新中…';position:fixed;top:calc(8px + env(safe-area-inset-top));right:10px;z-index:70;background:rgba(43,38,34,.82);color:#fff;font-size:11px;padding:3px 9px;border-radius:10px;pointer-events:none}
 .sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 6px;margin-top:10px}.sgrid div{background:#f7f4ef;border-radius:9px;padding:7px 8px;min-width:0}.sgrid span{display:block;font-size:11px;color:var(--muted)}.sgrid b{font-size:15px;font-weight:600}
 .spad{width:100%;height:170px;border:1.5px dashed var(--line);border-radius:12px;background:#fff;touch-action:none;display:block}
 .plist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
@@ -247,7 +248,10 @@ const API = async (action, payload) => {
   if (S.as && !READ_ACTIONS.includes(action)) throw '預覽模式只能看，不能存檔';
   const p = Object.assign({ as: S.as }, payload || {});
   if (REV_ACTIONS.includes(action) && p.id && !p.rev) p.rev = revOf(p.id);
-  if (window.MOCK) return MOCK(action, p);
+  // 加速：正在看案件時，存檔請伺服器順便帶回這個案件的最新資料（省掉第二趟讀取）
+  if (S.cur && !S.as && !READ_ACTIONS.includes(action) && !SLOW_ACTIONS.includes(action) && !['stats', 'admin'].includes(action)) p._back = S.cur;
+  const unwrap = d => { if (d && typeof d === 'object' && '__case' in d) { if (d.__case) S.fresh = { id: d.__id, data: d.__case, at: Date.now() }; return d.__r; } return d; };
+  if (window.MOCK) return unwrap(await MOCK(action, p));
   if (navigator.onLine === false) throw '目前沒有網路連線，請確認網路後再試';
   const slow = SLOW_ACTIONS.includes(action), ctl = new AbortController(), wait = slow ? 330000 : 45000;   // 產檔等到伺服器上限（6 分鐘內）
   const timer = setTimeout(() => ctl.abort(), wait);
@@ -261,7 +265,7 @@ const API = async (action, payload) => {
   let j;
   try { j = await r.json(); } catch (e) { throw '伺服器回應異常（' + r.status + '），請稍後再試'; }
   if (!j.ok) { if (j.auth) { localStorage.removeItem(TOKEN_KEY); showLogin(j.error); } throw j.error; }
-  return j.data;
+  return unwrap(j.data);
 };
 
 const $ = s => document.querySelector(s);
@@ -295,12 +299,25 @@ const PUBLIC_HINT = '此內容會出現在給客戶的工程日誌 PDF。請用�
 const chip = (t, cls) => `<span class="chip ${cls || 'c-mute'}">${esc(t)}</span>`;
 const COLORS = ['#9A9086', '#8A6A4B', '#5B6F8C', '#4F8A8B', '#B9773A', '#6E8FA6', '#A0794F', '#6D6359', '#4F7A5C', '#A88BA0', '#C9A227', '#B0483C'];
 
+/* ===== 本機快取：打開時先顯示手機上次記住的內容，背景再換成最新的 ===== */
+const CACHE_KEY = 'housen_cache_v1';
+function cacheGet() { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); return c && c.tok === tokTail() ? c : null; } catch (e) { return null; } }
+function tokTail() { try { return String(localStorage.getItem(TOKEN_KEY) || (window.MOCK ? 'mock' : '')).slice(-24); } catch (e) { return ''; } }
+function cachePut(fn) {
+  if (S.as) return;   // 預覽別人的畫面不存
+  try { const c = cacheGet() || { tok: tokTail(), cases: {} }; fn(c); const ids = Object.keys(c.cases).sort((a, b) => c.cases[b].at - c.cases[a].at); ids.slice(6).forEach(k => delete c.cases[k]); localStorage.setItem(CACHE_KEY, JSON.stringify(c)); } catch (e) { try { localStorage.removeItem(CACHE_KEY); } catch (x) { } }
+}
+function cacheHome() { if (S.home && !S.as) cachePut(c => { c.home = S.home; c.at = Date.now(); }); }
+function cacheCase() { if (S.data && S.cur && !S.as) { const id = S.cur, d = S.data; cachePut(c => { c.cases[id] = { data: d, at: Date.now() }; }); } }
+function syncing(on) { document.body.classList.toggle('syncing', !!on); }
 async function boot() {
   if (!window.MOCK && !localStorage.getItem(TOKEN_KEY)) return showLogin();
-  try { S.home = await API('home'); if (!S.real) S.real = S.home.me; S.lastLoad = Date.now(); notifyNew(); renderHome(); }
+  const cached = cacheGet();
+  if (cached && cached.home && !S.home) { S.home = cached.home; if (!S.real) S.real = S.home.me; renderHome(); syncing(true); }   // 先顯示上次的工作總表
+  try { S.home = await API('home'); if (!S.real) S.real = S.home.me; S.lastLoad = Date.now(); cacheHome(); notifyNew(); syncing(false); if (S.cur) { if ($('#sheet').style.display !== 'block') render(); } else if ($('#sheet').style.display !== 'block') renderHome(); }
   catch (e) { if (localStorage.getItem(TOKEN_KEY) || window.MOCK) { $('#main').innerHTML = `<div class="err">無法載入：${esc(e)}<div class="btns"><button class="btn ghost sm" id="bootretry">重試</button></div></div>`; $('#bootretry').onclick = () => { $('#main').innerHTML = '<div class="boot"><div class="logo">浩 森</div>載入中…</div>'; boot(); }; } }
 }
-async function reloadHome() { S.home = await API('home'); }
+async function reloadHome() { S.home = await API('home'); cacheHome(); }
 
 function dueTxt(due, done) {
   if (!due) return '';
@@ -494,15 +511,27 @@ function newTodo(caseId) {
 }
 
 async function openCase(id, tab, logId) {
-  busy(true, '載入案件…');
-  try {
-    S.data = await API('case', { id }); S.cur = id; S.tab = tab || 'sum'; S.open = logId ? { [logId]: true } : {};
+  const show = () => {
+    S.cur = id; S.tab = tab || S.tab || 'sum'; S.open = logId ? { [logId]: true } : (S.open || {});
     const c = S.home && S.home.cases.find(x => x.id === id); if (c) markAct(id, c.act);
     render(); if (logId) setTimeout(() => { const r = document.querySelector(`[data-lid="${logId}"]`); if (r) r.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 60);
+  };
+  const cached = !S.as && cacheGet(), hit = cached && cached.cases[id];
+  S.tab = tab || 'sum'; S.open = logId ? { [logId]: true } : {};
+  if (hit) {   // 先顯示手機上次記住的內容（不轉圈），背景再更新
+    S.data = hit.data; show(); syncing(true);
+    try { const fresh = await API('case', { id }); if (S.cur === id) { S.data = fresh; cacheCase(); if ($('#sheet').style.display !== 'block') render(); } }
+    catch (e) { netErr(e); } finally { syncing(false); }
+    return;
   }
+  busy(true, '載入案件…');
+  try { S.data = await API('case', { id }); show(); cacheCase(); }
   catch (e) { toast(e); } finally { busy(false); }
 }
-async function refreshCase() { S.data = await API('case', { id: S.cur }); }
+async function refreshCase() {
+  if (S.fresh && S.fresh.id === S.cur && Date.now() - S.fresh.at < 5000) { S.data = S.fresh.data; S.fresh = null; cacheCase(); return; }   // 存檔時已一起帶回，不用再讀
+  S.fresh = null; S.data = await API('case', { id: S.cur }); cacheCase();
+}
 
 const TABS = [['sum', '概況', '◎'], ['log', '日誌', '✎'], ['instr', '指示', '➜'], ['client', '客戶', '☺'], ['prog', '進度', '▤'], ['docs', '文件', '❐']];
 function render() {
@@ -511,7 +540,10 @@ function render() {
     <div class="sub">${chip(c['階段'], STAGE_CLS[c['階段']])}<span>設計師 ${esc(pname(c['負責設計師']) || '未指定')}</span>${c['客戶姓名'] ? '<span>・' + esc(c['客戶姓名']) + '</span>' : ''}</div>
     ${preview() ? `<div class="pvbar">預覽中：${esc(ME().name)} 的畫面（唯讀）</div>` : ''}
     ${S.data.closed ? `<div class="pvbar">已結案：日誌、指示、進度、客戶紀錄唯讀${c['保固到期日'] ? '・保固到 ' + esc(c['保固到期日']) : ''}</div>` : ''}`;
-  $('#backbtn').onclick = async () => { busy(true, '更新中…'); try { await reloadHome(); } catch (e) { } busy(false); renderHome(); };
+  $('#backbtn').onclick = async () => {   // 先回到工作總表（不轉圈），背景再更新
+    renderHome(); syncing(true);
+    try { await reloadHome(); if (!S.cur && $('#sheet').style.display !== 'block') renderHome(); } catch (e) { netErr(e); } finally { syncing(false); }
+  };
   const nIns = S.data.ins.filter(i => (i.to === me && i.status === '待處理') || (i.from === me && i.status === '已回報')).length;
   const nLog = S.data.logs.filter(l => logNeedsMe(l)).length;
   $('#nav').style.display = 'grid';
@@ -1550,6 +1582,7 @@ async function onGoogle(resp) {
   } catch (e) { $('#lerr').textContent = '網路連線失敗，請再試一次'; }
 }
 function logout() {
+  try { localStorage.removeItem(CACHE_KEY); } catch (e) { }
   localStorage.removeItem(TOKEN_KEY);
   try { google.accounts.id.disableAutoSelect(); } catch (e) { }
   S.home = null; S.real = null; S.as = ''; showLogin();
@@ -1588,7 +1621,7 @@ async function silentRefresh(manual) {
   try {
     const home = await API('home'), data = S.cur ? await API('case', { id: S.cur }) : null;
     if ($('#sheet').style.display === 'block') return true;
-    S.home = home; if (data) S.data = data; S.lastLoad = Date.now(); notifyNew();
+    S.home = home; if (data) S.data = data; S.lastLoad = Date.now(); cacheHome(); if (data) cacheCase(); notifyNew();
     if (S.cur) render(); else renderHome();
     netErr(''); return true;
   } catch (e) { netErr(e, manual); return false; }
