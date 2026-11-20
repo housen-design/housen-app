@@ -102,16 +102,21 @@ function run_(email, action, payload) {
     setActualStart: setActualStart_, setDone: setDone_,
     saveMeeting: saveMeeting_, reviewMeeting: reviewMeeting_, saveClientIns: saveClientIns_, confirmClientIns: confirmClientIns_,
     markNoWork: markNoWork_, saveCheck: saveCheck_, saveRepair: saveRepair_, applySop: applySop_, setSop: setSop_, applyMilestones: applyMilestones_, saveMilestone: saveMilestone_, setMilestone: setMilestone_,
-    saveSetting: saveSetting_, saveTemplateRow: saveTemplateRow_, suggestTemplate: suggestTemplate_, setSuggestion: setSuggestion_
+    saveSetting: saveSetting_, saveTemplateRow: saveTemplateRow_, suggestTemplate: suggestTemplate_, setSuggestion: setSuggestion_,
+    actClientIns: actClientIns_
   };
   if (READ[action]) return READ[action](me, payload);
-  if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); return SLOW[action](me, payload); }
+  if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); target_(action, payload); return SLOW[action](me, payload); }
   if (WRITE[action]) {
     if (me.preview) throw new Error('預覽模式只能看，不能存檔');
-    closedGuard_(action, payload);
     const lock = LockService.getScriptLock();
     lock.waitLock(20000);
-    try { return WRITE[action](me, payload); } finally { lock.releaseLock(); }
+    try {
+      // 在鎖內才判斷：資料屬於哪個案件、是否已結案、畫面是否過期（避免檢查完到寫入之間被別人改掉）
+      const cid = target_(action, payload);
+      closedGuard_(action, cid);
+      return WRITE[action](me, payload);
+    } finally { lock.releaseLock(); }
   }
   throw new Error('未知的動作：' + action);
 }
@@ -356,6 +361,13 @@ function getHome_(me) {
   tryTable_('保固報修').filter(x => x['負責人'] === me.id && x['狀態'] !== '已完成').forEach(x => items.push({
     kind: 'wr', id: x['報修ID'], caseId: x['案件ID'], caseName: cname(x['案件ID']), text: x['內容'], status: x['狀態'], created: x['報修日期'], due: ''
   }));
+  // 客戶指示的執行：交給我待執行的；我負責的案件、已回報等我確認完成的
+  const designerOf = {}; caseRows.forEach(c => { designerOf[c['案件ID']] = c['負責設計師']; });
+  tryTable_('客戶指示').forEach(x => {
+    const st = x['執行狀態'] || '';
+    if (st === '待執行' && x['執行人'] === me.id) items.push({ kind: 'cins', id: x['指示ID'], caseId: x['案件ID'], caseName: cname(x['案件ID']), text: x['內容'], status: '待執行', due: x['執行期限'], created: x['建立時間'] });
+    else if (st === '已回報' && (designerOf[x['案件ID']] === me.id || (me.role === 'Boss' && !designerOf[x['案件ID']]))) items.push({ kind: 'cins', id: x['指示ID'], caseId: x['案件ID'], caseName: cname(x['案件ID']), text: x['內容'], status: '已回報', due: x['執行期限'], created: x['回報時間'] || x['建立時間'], report: x['處理回報'] });
+  });
   // 設計階段里程碑：交給我、未完成的（期限 7 天內或已逾期）
   const soon = fmt_(new Date(Date.now() + 7 * 864e5), 'yyyy/MM/dd');
   tryTable_('里程碑').filter(x => x['負責人'] === me.id && x['狀態'] !== '已完成' && x['目前期限'] && x['目前期限'] <= soon).forEach(x => items.push({
@@ -410,7 +422,7 @@ function getCase_(me, p) {
   if (!c) throw new Error('找不到案件');
   if (!me.seeMoney) { delete c['設計費']; delete c['工程金額']; }
   const photos = readTable_('日誌照片').filter(x => x['案件ID'] === p.id);
-  const ph = x => ({ id: x['照片ID'], path: x['照片'], note: x['說明'] || [x['空間'], x['位置']].filter(String).join('・') });
+  const ph = x => ({ id: x['照片ID'], path: x['照片'], note: x['說明'] || [x['空間'], x['位置']].filter(String).join('・'), noteBy: x['說明修改人'], noteAt: x['說明修改時間'] });
   const logs = readTable_('工程日誌').filter(l => l['案件ID'] === p.id).map(l => {
     const mine = photos.filter(x => x['日誌ID'] === l['日誌ID']);
     const resign = l['修改待簽'] === 'Y';
@@ -425,7 +437,7 @@ function getCase_(me, p) {
       signedBy: l['簽核者'], signedAt: l['簽核時間'], resign: resign, snap: resign ? parseSnap_(l) : null,
       signedOnce: !!l['簽核內容'], minor: l['小修待看'] === 'Y', returnNote: l['退回原因'],
       pdfAt: l['PDF時間'], hasPdf: !!l['PDF檔ID'], revisedAt: l['修訂時間'], shares: +l['分享次數'] || 0, sharedBy: l['最後分享人'], sharedAt: l['最後分享時間'],
-      downloads: +l['下載次數'] || 0, downloadedBy: l['最後下載人'], downloadedAt: l['最後下載時間']
+      downloads: +l['下載次數'] || 0, downloadedBy: l['最後下載人'], downloadedAt: l['最後下載時間'], rev: rev_('工程日誌', l)
     };
   }).sort((a, b) => (b.date + b.created).localeCompare(a.date + a.created));
   const ins = readTable_('主管指示').filter(i => i['案件ID'] === p.id && i['指示內容']).map(i => ({
@@ -439,20 +451,22 @@ function getCase_(me, p) {
     id: r['工序ID'], order: +r['順序'] || 0, trade: r['工種'], name: r['工序名稱'],
     baseStart: r['原計畫開始'], baseEnd: r['原計畫完成'], start: r['目前計畫開始'], end: r['目前計畫完成'],
     actStart: r['實際開始'], actStartBy: r['實際開始確認人'], actEnd: r['實際完成'], actEndBy: r['實際完成確認人'],
-    check: r['查驗點'], cancelled: r['狀態'] === '取消', tpl: r['範本工序ID']
+    check: r['查驗點'], cancelled: r['狀態'] === '取消', tpl: r['範本工序ID'], rev: rev_('進度計畫', r)
   })).sort((a, b) => a.order - b.order);
   const planLog = tryTable_('進度異動紀錄').filter(r => r['案件ID'] === p.id).map(r => ({
     item: r['工序ID'], what: r['項目'], from: r['原值'], to: r['新值'], why: r['原因'], by: r['修改人'], at: r['時間']
   })).reverse();
   const meetings = tryTable_('會議').filter(m => m['案件ID'] === p.id).map(m => ({
     id: m['會議ID'], date: m['日期'], name: m['會議名稱'], attendees: m['出席人'], audio: m['錄音檔'], summary: m['AI摘要'],
-    reviewedBy: m['核對人'], reviewedAt: m['核對時間'], by: m['記錄人'], pdfAt: m['PDF時間']
+    reviewedBy: m['核對人'], reviewedAt: m['核對時間'], by: m['記錄人'], pdfAt: m['PDF時間'], rev: rev_('會議', m)
   })).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const cins = tryTable_('客戶指示').filter(x => x['案件ID'] === p.id).map(x => ({
     id: x['指示ID'], meetingId: x['會議ID'], type: x['類型'], source: x['來源'], date: x['日期'], text: x['內容'],
     impact: x['影響費用或工期'] === 'Y', amount: x['追加減金額'], days: x['影響工期天數'], status: x['確認狀態'] || '待確認',
     method: x['確認方式'], sign: x['客戶簽名'], shot: x['確認截圖'], confirmedAt: x['確認時間'], note: x['確認備註'],
-    by: x['記錄人'], created: x['建立時間'], locked: x['鎖定'] === 'Y'
+    by: x['記錄人'], created: x['建立時間'], locked: x['鎖定'] === 'Y',
+    owner: x['執行人'], due: x['執行期限'], exec: x['執行狀態'] || (x['確認狀態'] === '客戶不同意' ? '不需執行' : '待執行'), report: x['處理回報'], reportAt: x['回報時間'],
+    doneBy: x['完成確認人'], doneAt: x['完成時間'], rev: rev_('客戶指示', x)
   })).sort((a, b) => ((b.date || '') + b.created).localeCompare((a.date || '') + a.created));
   const checks = tryTable_('查驗紀錄').filter(x => x['案件ID'] === p.id).map(x => ({
     id: x['紀錄ID'], item: x['工序ID'], point: x['查驗點'], checkId: x['檢查ID'], label: x['檢查項目'], photo: x['照片'], done: x['完成'] === 'Y',
@@ -463,11 +477,11 @@ function getCase_(me, p) {
     .sort((a, b) => a.order - b.order);
   const ms = tryTable_('里程碑').filter(x => x['案件ID'] === p.id).map(x => ({
     id: x['任務ID'], stage: x['階段'], name: x['名稱'], owner: x['負責人'], base: x['原定日期'], due: x['目前期限'], done: x['完成日'],
-    status: x['狀態'], returns: +x['退回次數'] || 0, why: x['改期原因'], note: x['備註'], order: +x['順序'] || 0
+    status: x['狀態'], returns: +x['退回次數'] || 0, why: x['改期原因'], note: x['備註'], order: +x['順序'] || 0, rev: rev_('里程碑', x)
   })).sort((a, b) => (a.due || '9').localeCompare(b.due || '9') || a.order - b.order);
-  return { info: c, canEdit: canEditCase_(me, c), canPlan: canPlan_(me, c), logs, ins, todos, plan, planLog, meetings, cins, checks, checkTpl, sop, ms,
+  return { info: c, canEdit: canEditCase_(me, c), canMoney: canEditMoney_(me), canPlan: canPlan_(me, c), logs, ins, todos, plan, planLog, meetings, cins, checks, checkTpl, sop, ms,
     settings: settings_(), closed: c['階段'] === '結案',
-    repairs: tryTable_('保固報修').filter(x => x['案件ID'] === p.id).map(x => ({ id: x['報修ID'], date: x['報修日期'], text: x['內容'], owner: x['負責人'], status: x['狀態'], result: x['處理結果'], done: x['完成日'], by: x['記錄人'] }))
+    repairs: tryTable_('保固報修').filter(x => x['案件ID'] === p.id).map(x => ({ id: x['報修ID'], date: x['報修日期'], text: x['內容'], owner: x['負責人'], status: x['狀態'], result: x['處理結果'], done: x['完成日'], by: x['記錄人'], rev: rev_('保固報修', x) }))
       .sort((a, b) => String(b.date).localeCompare(String(a.date))),
     docs: tryTable_('文件紀錄').filter(x => x['案件ID'] === p.id).map(x => ({ id: x['文件ID'], date: x['日期'], name: x['文件名稱'], type: x['文件類型'], url: x['檔案連結'], by: x['產生人'], at: x['產生時間'] || x['日期'] }))
       .sort((a, b) => String(b.at).localeCompare(String(a.at))),
@@ -533,18 +547,25 @@ function saveLog_(me, d) {
  */
 function updateLog_(me, d) {
   const l = getLog_(d.id), st = logStatus_(l), snap = parseSnap_(l);
+  // 舊照片：刪除與說明修改都跟著這次「儲存」一起生效（關掉表單不存＝什麼都沒變）
+  const mine = tryTable_('日誌照片').filter(x => x['日誌ID'] === d.id && !x['刪除時間']);
+  const dels = (d.delPhotos || []).filter(id => mine.some(x => x['照片ID'] === id));
+  const notes = d.notes || {}, noteIds = Object.keys(notes).filter(id => mine.some(x => x['照片ID'] === id && String(x['說明'] || '') !== String(notes[id] || '').trim()) && dels.indexOf(id) < 0);
   const patch = {
     '日期': ymd_(d.date), '工種': (d.trades || []).join(' , '), '今日狀況': d.text || '', '發現問題': d.issue || '',
     '最後修改時間': now_(), '修改次數': (+l['修改次數'] || 0) + 1, '最後修改人': me.id
   };
   if (snap && st !== LS.DRAFT) {
-    const major = snap.date !== patch['日期'] || snap.trades !== patch['工種'] || snap.text !== patch['今日狀況'] || snap.issue !== patch['發現問題'];
+    const delSigned = dels.some(id => (snap.photos || []).some(p => p.id === id));   // 刪掉已簽核內容裡的照片＝重大修改
+    const major = snap.date !== patch['日期'] || snap.trades !== patch['工種'] || snap.text !== patch['今日狀況'] || snap.issue !== patch['發現問題'] || delSigned;
     if (major) Object.assign(patch, resignPatch_(l));
-    else if (d.photos && d.photos.length && st === LS.SIGNED) { patch['小修待看'] = 'Y'; patch['修訂時間'] = now_(); }
+    else if (((d.photos && d.photos.length) || noteIds.length || dels.length) && st === LS.SIGNED) { patch['小修待看'] = 'Y'; patch['修訂時間'] = now_(); }   // 加照片、改說明＝小修
   } else if (d.submit && st === LS.DRAFT) {
     Object.assign(patch, snap ? resignPatch_(l) : submitPatch_(l['填寫人'], caseRow_(l['案件ID'])));
   }
   updateRow_('工程日誌', '日誌ID', d.id, patch);
+  dels.forEach(id => updateRow_('日誌照片', '照片ID', id, { '刪除時間': now_(), '刪除人': me.id }));
+  noteIds.forEach(id => updateRow_('日誌照片', '照片ID', id, { '說明': String(notes[id] || '').trim(), '說明修改人': me.id, '說明修改時間': now_() }));
   savePhotos_(l['案件ID'], d.id, d.photos);
   return d.id;
 }
@@ -697,9 +718,9 @@ function makePdf_(logId) {
   const name = '工程日誌_' + c['案件名稱'] + '_' + String(l['日期']).replace(/\//g, '-') + '_' + logId.slice(0, 4) + '.pdf';
   const blob = Utilities.newBlob(html, 'text/html', 'log.html').getAs('application/pdf').setName(name);
   const dir = logPdfDir_(c);
-  if (l['PDF檔ID']) { try { DriveApp.getFileById(l['PDF檔ID']).setTrashed(true); } catch (e) { } }
-  const file = dir.createFile(blob);
+  const file = dir.createFile(blob);   // 先建好新檔；失敗就停在這裡，舊檔和紀錄都不動
   updateRow_('工程日誌', '日誌ID', logId, { 'PDF檔ID': file.getId(), 'PDF時間': now_() });
+  if (l['PDF檔ID'] && l['PDF檔ID'] !== file.getId()) { try { DriveApp.getFileById(l['PDF檔ID']).setTrashed(true); } catch (e) { } }   // 新檔與紀錄都成功後才回收舊檔
   return file;
 }
 
@@ -791,7 +812,10 @@ function setTodo_(me, d) {
   return true;
 }
 
+/** 新增案件：暫定主管、行政可以（權限表待 Boss 確認） */
+const CASE_CREATE_ROLES = ['Boss', '主管', '行政'];
 function saveCase_(me, d) {
+  if (CASE_CREATE_ROLES.indexOf(me.role) < 0) throw new Error('只有主管或行政可以新增案件');
   if (!d.name) throw new Error('請填寫案件名稱');
   const id = uid_();
   appendRow_('案件', {
@@ -819,22 +843,61 @@ function setStage_(me, d) {
  */
 const CLOSED_OK = ['setStage', 'saveCaseInfo', 'saveRepair', 'saveTodo', 'setTodo', 'saveCase', 'saveTrade', 'shareLog',
   'saveSetting', 'saveTemplateRow', 'suggestTemplate', 'setSuggestion'];
-function closedGuard_(action, d) {
-  if (CLOSED_OK.indexOf(action) >= 0 || !d) return;
-  let cid = d.caseId || '';
-  const look = (t, k, id) => { try { return rowObj_(findRow_(t, k, id))['案件ID']; } catch (e) { return ''; } };
-  if (!cid && d.id) {
-    const map = {
-      updateLog: ['工程日誌', '日誌ID'], submitLog: ['工程日誌', '日誌ID'], confirmLog: ['工程日誌', '日誌ID'], signLog: ['工程日誌', '日誌ID'],
-      returnLog: ['工程日誌', '日誌ID'], escalateLog: ['工程日誌', '日誌ID'], seenLog: ['工程日誌', '日誌ID'],
-      actIns: ['主管指示', '指示ID'], cancelPlanItem: ['進度計畫', '工序ID'], setActualStart: ['進度計畫', '工序ID'], setDone: ['進度計畫', '工序ID'],
-      reviewMeeting: ['會議', '會議ID'], confirmClientIns: ['客戶指示', '指示ID'], setSop: ['案件SOP', 'ID'], setMilestone: ['里程碑', '任務ID']
-    };
-    if (map[action]) cid = look(map[action][0], map[action][1], d.id);
-  }
-  if (!cid && d.itemId) cid = look('進度計畫', '工序ID', d.itemId);
-  if (!cid && action === 'deletePhoto' && d.id) cid = look('日誌照片', '照片ID', d.id);
-  const c = cid ? caseRow_(cid) : null;
+/**
+ * 找出這次動作真正影響的案件：一律從「目標紀錄」查出所屬案件，不相信畫面傳來的 caseId。
+ * 傳來的 caseId 與目標紀錄不同案 → 拒絕；查到後把 payload.caseId 改成真正的案件，後面的權限檢查就以它為準。
+ * 編輯類動作若帶 rev（畫面開啟時的版本），與目前內容不同 → 拒絕，避免舊畫面蓋掉別人剛存的內容。
+ */
+const REF = {
+  updateLog: [['id', '工程日誌', '日誌ID']], submitLog: [['id', '工程日誌', '日誌ID']], confirmLog: [['id', '工程日誌', '日誌ID']],
+  signLog: [['id', '工程日誌', '日誌ID']], returnLog: [['id', '工程日誌', '日誌ID']], escalateLog: [['id', '工程日誌', '日誌ID']],
+  seenLog: [['id', '工程日誌', '日誌ID']], shareLog: [['id', '工程日誌', '日誌ID']], pdfLog: [['id', '工程日誌', '日誌ID']],
+  deletePhoto: [['id', '日誌照片', '照片ID']],
+  saveIns: [['logId', '工程日誌', '日誌ID']], actIns: [['id', '主管指示', '指示ID']], setTodo: [['id', '待辦', '待辦ID']],
+  savePlanItem: [['id', '進度計畫', '工序ID']], cancelPlanItem: [['id', '進度計畫', '工序ID']], setActualStart: [['id', '進度計畫', '工序ID']],
+  setDone: [['id', '進度計畫', '工序ID']], saveCheck: [['itemId', '進度計畫', '工序ID']],
+  saveMeeting: [['id', '會議', '會議ID']], reviewMeeting: [['id', '會議', '會議ID']],
+  saveClientIns: [['id', '客戶指示', '指示ID'], ['meetingId', '會議', '會議ID']], confirmClientIns: [['id', '客戶指示', '指示ID']], actClientIns: [['id', '客戶指示', '指示ID']],
+  setSop: [['id', '案件SOP', 'ID']], saveMilestone: [['id', '里程碑', '任務ID']], setMilestone: [['id', '里程碑', '任務ID']],
+  saveRepair: [['id', '保固報修', '報修ID']], clientPdf: [['meetingId', '會議', '會議ID'], ['insId', '客戶指示', '指示ID']]
+};
+const CASE_IS_ID = ['setStage', 'saveCaseInfo'];
+/** 版本比對用的欄位（只看內容，不看已讀、下載這類欄位） */
+const REV_COLS = {
+  '工程日誌': ['日期', '工種', '今日狀況', '發現問題', '修改次數'], '會議': ['日期', '會議名稱', '出席人', '錄音檔', 'AI摘要'],
+  '客戶指示': ['日期', '內容', '影響費用或工期', '追加減金額', '影響工期天數', '鎖定', '執行人', '執行期限', '執行狀態', '處理回報'],
+  '進度計畫': ['工序名稱', '工種', '目前計畫開始', '目前計畫完成', '狀態', '實際開始', '實際完成'],
+  '里程碑': ['名稱', '負責人', '目前期限', '狀態'], '保固報修': ['內容', '負責人', '狀態', '處理結果']
+};
+const REV_CHECK = ['updateLog', 'saveMeeting', 'saveClientIns', 'savePlanItem', 'saveMilestone', 'saveRepair', 'actClientIns'];
+function rev_(table, r) {
+  const s = (REV_COLS[table] || []).map(k => String(r[k] == null ? '' : r[k])).join('\u0001');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+function target_(action, d) {
+  if (!d) return '';
+  if (CASE_IS_ID.indexOf(action) >= 0) return d.id || '';
+  const refs = REF[action] || [], found = [];
+  refs.forEach(([field, table, key]) => {
+    if (!d[field]) return;
+    let r;
+    try { r = rowObj_(findRow_(table, key, d[field])); } catch (e) { throw new Error('找不到這筆資料，可能已被刪除；請重新整理'); }
+    found.push(r['案件ID'] || '');
+    if (field === refs[0][0] && d.rev && REV_CHECK.indexOf(action) >= 0 && rev_(table, r) !== d.rev) {
+      const who = r['最後修改人'] ? pname_(r['最後修改人']) : '別人';
+      throw new Error('這筆資料剛被' + who + '修改過，你畫面上的是舊內容。請關掉重新打開，確認後再改。');
+    }
+  });
+  const ids = found.concat(d.caseId ? [d.caseId] : []).filter(String);
+  if (ids.some(x => x !== ids[0])) throw new Error('資料與案件不符，已拒絕這次動作');
+  if (found.length && found[0]) d.caseId = found[0];
+  return ids[0] || '';
+}
+function closedGuard_(action, cid) {
+  if (CLOSED_OK.indexOf(action) >= 0 || !cid) return;
+  const c = caseRow_(cid);
   if (c && c['階段'] === '結案') throw new Error('案件已結案，資料唯讀；如需修改請主管把階段改回');
 }
 
@@ -910,6 +973,9 @@ const CASE_DATES = ['提案日', '設計約簽約日', '工程約簽約日', '�
 const CASE_MONEY = ['設計費', '工程金額'];
 /** 可修改案件資料：主管、行政、該案負責設計師（金額另需「可看金額」） */
 function canEditCase_(me, c) { return me.leader || me.role === '行政' || (!!c && c['負責設計師'] === me.id); }
+/** 金額：「可看」不等於「可改」。暫定只有 Boss 與行政（且可看金額）可以改，權限表待確認 */
+const MONEY_EDIT_ROLES = ['Boss', '行政'];
+function canEditMoney_(me) { return me.seeMoney && MONEY_EDIT_ROLES.indexOf(me.role) >= 0; }
 
 /** 只寫入有變動的欄位，並記錄最後修改時間與修改人 */
 function saveCaseInfo_(me, d) {
@@ -919,7 +985,11 @@ function saveCaseInfo_(me, d) {
   const f = d.fields || {}, patch = {};
   CASE_TEXT.forEach(k => { if (k in f) patch[k] = String(f[k] == null ? '' : f[k]).trim(); });
   CASE_DATES.forEach(k => { if (k in f) patch[k] = ymd_(String(f[k] || '').trim()); });
-  if (me.seeMoney) CASE_MONEY.forEach(k => { if (k in f) patch[k] = String(f[k] == null ? '' : f[k]).replace(/[^0-9.]/g, ''); });
+  if (CASE_MONEY.some(k => k in f && String(f[k] == null ? '' : f[k]).replace(/[^0-9.]/g, '') !== String(c[k] || '').replace(/[^0-9.]/g, '')) && !canEditMoney_(me)) throw new Error('你可以看金額，但修改金額暫定只有 Boss 和行政可以');
+  if (canEditMoney_(me)) CASE_MONEY.forEach(k => { if (k in f) patch[k] = String(f[k] == null ? '' : f[k]).replace(/[^0-9.]/g, ''); });
+  // 多人同時編輯：只有「你改的欄位」在你打開之後又被別人改過，才擋下；改不同欄位兩邊都會保留
+  const orig = d.orig || {}, clash = Object.keys(f).filter(k => k in orig && String(c[k] == null ? '' : c[k]) !== String(orig[k] == null ? '' : orig[k]));
+  if (clash.length) throw new Error('「' + clash.join('、') + '」在你打開之後已被' + (c['最後修改人'] && c['最後修改人'] !== me.id ? pname_(c['最後修改人']) : '別人') + '改成新的內容，請關掉重新打開再改');
   if ('案件名稱' in patch && !patch['案件名稱']) throw new Error('案件名稱不能空白');
   if (patch['負責設計師'] && !people_().some(p => p.id === patch['負責設計師'] && p.active)) throw new Error('負責設計師不在人員名單');
   const v = k => k in patch ? patch[k] : (c[k] || '');
@@ -1143,14 +1213,20 @@ function saveClientIns_(me, d) {
     '日期': ymd_(d.date) || today_(), '內容': text, '影響費用或工期': impact,
     '追加減金額': impact === 'Y' ? String(d.amount || '').replace(/[^0-9.\-]/g, '') : '', '影響工期天數': impact === 'Y' ? String(d.days || '').replace(/[^0-9\-]/g, '') : ''
   };
+  row['執行人'] = d.owner || c['負責設計師'] || me.id;
+  row['執行期限'] = ymd_(d.due);
+  if (row['執行人'] && !people_().some(p => p.id === row['執行人'] && p.active)) throw new Error('執行人不在人員名單');
   if (!d.id) {
     const id = uid_();
-    appendRow_('客戶指示', Object.assign({ '指示ID': id, '案件ID': d.caseId, '確認狀態': '待確認', '記錄人': me.id, '建立時間': now_() }, row));
+    appendRow_('客戶指示', Object.assign({ '指示ID': id, '案件ID': d.caseId, '確認狀態': '待確認', '執行狀態': '待執行', '記錄人': me.id, '建立時間': now_() }, row));
     return id;
   }
   const x = rowObj_(findRow_('客戶指示', '指示ID', d.id));
-  if (x['鎖定'] === 'Y') throw new Error('客戶已確認，不能修改；要更正請另記一筆');
   if (!canCI_(me, c, x)) throw new Error('只有記錄人、負責設計師或主管可以修改');
+  if (x['鎖定'] === 'Y') {   // 客戶確認後內容鎖定，只能調整誰執行、期限
+    updateRow_('客戶指示', '指示ID', d.id, { '執行人': row['執行人'], '執行期限': row['執行期限'], '最後修改人': me.id, '最後修改時間': now_() });
+    return d.id;
+  }
   updateRow_('客戶指示', '指示ID', d.id, Object.assign(row, { '最後修改人': me.id, '最後修改時間': now_() }));
   return d.id;
 }
@@ -1173,8 +1249,33 @@ function confirmClientIns_(me, d) {
   if (d.method === 'LINE回覆' && !d.shot) throw new Error('請附上客戶回覆的截圖');
   updateRow_('客戶指示', '指示ID', d.id, {
     '確認狀態': status, '確認方式': d.method, '客戶簽名': saveImage_(d.sign, 'png', '簽名'), '確認截圖': saveImage_(d.shot, 'jpg', '截圖'),
-    '確認時間': now_(), '確認備註': d.note || '', '鎖定': 'Y', '最後修改人': me.id, '最後修改時間': now_()
+    '確認時間': now_(), '確認備註': d.note || '', '鎖定': 'Y', '最後修改人': me.id, '最後修改時間': now_(),
+    '執行狀態': status === '客戶不同意' ? '不需執行' : (x['執行狀態'] || '待執行')   // 客戶確認≠事情做完：仍要執行、回報、確認完成
   });
+  return true;
+}
+
+/**
+ * 客戶指示的執行追蹤（與「客戶確認」分開）：待執行 →（執行人回報）已回報 →（負責設計師或主管確認）已完成；可退回重做。
+ * act: report（執行人回報處理結果）／done（確認完成）／return（退回，需原因）
+ */
+function actClientIns_(me, d) {
+  const x = rowObj_(findRow_('客戶指示', '指示ID', d.id)), c = caseRow_(x['案件ID']);
+  const lead = me.leader || c['負責設計師'] === me.id, st = x['執行狀態'] || '待執行';
+  if (st === '不需執行') throw new Error('客戶不同意，這項不需執行');
+  const text = String(d.text || '').trim();
+  if (d.act === 'report') {
+    if (x['執行人'] !== me.id && !lead) throw new Error('只有執行人、負責設計師或主管可以回報');
+    if (!text) throw new Error('請寫處理結果，例如：木作已改 260cm');
+    updateRow_('客戶指示', '指示ID', d.id, { '執行狀態': '已回報', '處理回報': text, '回報時間': now_(), '回報人': me.id, '最後修改人': me.id, '最後修改時間': now_() });
+  } else if (d.act === 'done') {
+    if (!lead) throw new Error('只有負責設計師或主管可以確認完成');
+    updateRow_('客戶指示', '指示ID', d.id, { '執行狀態': '已完成', '處理回報': text || x['處理回報'], '完成確認人': me.id, '完成時間': now_(), '最後修改人': me.id, '最後修改時間': now_() });
+  } else if (d.act === 'return') {
+    if (!lead) throw new Error('只有負責設計師或主管可以退回');
+    if (!text) throw new Error('退回請寫原因');
+    updateRow_('客戶指示', '指示ID', d.id, { '執行狀態': '待執行', '處理回報': (x['處理回報'] ? x['處理回報'] + '\n' : '') + today_() + ' 退回（' + pname_(me.id) + '）：' + text, '最後修改人': me.id, '最後修改時間': now_() });
+  } else throw new Error('不明的動作');
   return true;
 }
 
@@ -1329,11 +1430,11 @@ function saveDoc_(me, c, sub, name, html, type, srcId) {
   const blob = Utilities.newBlob(html, 'text/html', 'doc.html').getAs('application/pdf').setName(name);
   const d = caseDir_(c), it = d.getFoldersByName(sub), dir = it.hasNext() ? it.next() : d.createFolder(sub);
   const docs = tryTable_('文件紀錄'), old = srcId ? docs.find(x => x['來源ID'] === srcId && x['文件類型'] === type) : null;
-  if (old && old['檔案ID']) { try { DriveApp.getFileById(old['檔案ID']).setTrashed(true); } catch (e) { } }
-  const file = dir.createFile(blob);
+  const file = dir.createFile(blob);   // 先建好新檔；失敗就停在這裡，舊檔和紀錄都不動
   const row = { '日期': today_(), '文件名稱': name, '檔案連結': file.getUrl(), '檔案ID': file.getId(), '產生人': me.id, '產生時間': now_() };
   if (old) updateRow_('文件紀錄', '文件ID', old['文件ID'], row);
   else appendRow_('文件紀錄', Object.assign({ '文件ID': uid_(), '案件ID': c['案件ID'], '文件類型': type, '對內對外': '對外', '來源ID': srcId || '' }, row));
+  if (old && old['檔案ID'] && old['檔案ID'] !== file.getId()) { try { DriveApp.getFileById(old['檔案ID']).setTrashed(true); } catch (e) { } }
   return file;
 }
 function pdfOut_(file) { return { name: file.getName(), data: Utilities.base64Encode(file.getBlob().getBytes()), url: file.getUrl() }; }
@@ -1350,6 +1451,8 @@ function ciBlock_(x) {
 
 /** 客戶確認單／會議記錄 PDF（d.meetingId 或 d.insId） */
 function clientPdf_(me, d) {
+  const owner = d.meetingId ? rowObj_(findRow_('會議', '會議ID', d.meetingId)) : rowObj_(findRow_('客戶指示', '指示ID', d.insId));
+  if (!canCI_(me, caseRow_(owner['案件ID']), null) && !me.leader) throw new Error('只有負責設計師或主管可以產生');   // 先檢查權限，再做任何事
   const all = tryTable_('客戶指示');
   let c, html, name, src, type;
   if (d.meetingId) {
@@ -1362,7 +1465,6 @@ function clientPdf_(me, d) {
       + '<h2>決議與客戶指示（' + items.length + ' 項）</h2>' + (items.map(ciBlock_).join('') || '<div class="im">無</div>')
       + '<h2>客戶確認</h2><div class="txt">以上內容如無誤，請回覆「確認」；如有不同意見，請直接說明。</div>');
     name = '會議記錄_' + c['案件名稱'] + '_' + String(m['日期']).replace(/\//g, '-') + '.pdf'; src = d.meetingId; type = '會議記錄';
-    updateRow_('會議', '會議ID', d.meetingId, { 'PDF時間': now_() });
   } else {
     const x = rowObj_(findRow_('客戶指示', '指示ID', d.insId)); c = caseRow_(x['案件ID']);
     html = docHtml_('客戶指示確認單', c['案件名稱'] + '　' + x['日期'],
@@ -1370,8 +1472,9 @@ function clientPdf_(me, d) {
       + '<h2>客戶指示內容</h2>' + ciBlock_(x) + '<h2>客戶確認</h2><div class="txt">以上內容如無誤，請回覆「確認」；如有不同意見，請直接說明。</div>');
     name = '客戶確認單_' + c['案件名稱'] + '_' + String(x['日期']).replace(/\//g, '-') + '_' + d.insId.slice(0, 4) + '.pdf'; src = d.insId; type = '客戶確認單';
   }
-  if (!canCI_(me, c, null) && !me.leader) throw new Error('只有負責設計師或主管可以產生');
-  return pdfOut_(saveDoc_(me, c, '客戶確認', name, html, type, src));
+  const file = saveDoc_(me, c, '客戶確認', name, html, type, src);
+  if (d.meetingId) updateRow_('會議', '會議ID', d.meetingId, { 'PDF時間': now_() });   // 檔案真的建好才記錄
+  return pdfOut_(file);
 }
 
 /* ========== 文件頁：週報、工程履歷 ==========

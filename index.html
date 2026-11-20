@@ -235,18 +235,28 @@ const S = { home: null, real: null, as: '', cur: null, data: null, tab: 'sum', f
 
 const TOKEN_KEY = 'housen_token';
 const READ_ACTIONS = ['home', 'case', 'thumbs', 'pdfView'];   // 只讀；預覽模式只允許這些
+const REV_ACTIONS = ['updateLog', 'saveMeeting', 'saveClientIns', 'savePlanItem', 'saveMilestone', 'saveRepair', 'actClientIns'];
+const SLOW_ACTIONS = ['pdfLog', 'clientPdf', 'reportPdf'];   // 產生 PDF：可能要 1～3 分鐘
+/** 找畫面打開時那筆資料的版本，存檔時一起送出，後端用來判斷是否已被別人改過 */
+function revOf(id) {
+  if (!id || !S.data) return '';
+  for (const k of ['logs', 'plan', 'meetings', 'cins', 'ms', 'repairs']) { const x = (S.data[k] || []).find(y => y.id === id); if (x && x.rev) return x.rev; }
+  return '';
+}
 const API = async (action, payload) => {
   if (S.as && !READ_ACTIONS.includes(action)) throw '預覽模式只能看，不能存檔';
   const p = Object.assign({ as: S.as }, payload || {});
+  if (REV_ACTIONS.includes(action) && p.id && !p.rev) p.rev = revOf(p.id);
   if (window.MOCK) return MOCK(action, p);
   if (navigator.onLine === false) throw '目前沒有網路連線，請確認網路後再試';
-  const ctl = new AbortController(), wait = action === 'pdfLog' ? 120000 : 45000;
+  const slow = SLOW_ACTIONS.includes(action), ctl = new AbortController(), wait = slow ? 330000 : 45000;   // 產檔等到伺服器上限（6 分鐘內）
   const timer = setTimeout(() => ctl.abort(), wait);
   let r;
   try {
     r = await fetch(CONFIG.API_URL, { method: 'POST', signal: ctl.signal, body: JSON.stringify({ action, payload: p, token: localStorage.getItem(TOKEN_KEY) }) });
   } catch (e) {
-    throw e && e.name === 'AbortError' ? '伺服器超過 ' + wait / 1000 + ' 秒沒有回應，請稍後再試' : '連不上伺服器，請檢查網路後再試';
+    if (e && e.name === 'AbortError') throw slow ? '等太久沒有回應，但檔案可能仍在產生。請 1～2 分鐘後到「文件」頁看看，先不要重按，以免重複產生。' : '伺服器超過 ' + wait / 1000 + ' 秒沒有回應，請稍後再試';
+    throw slow ? '連線中斷了，但檔案可能仍在產生。請 1～2 分鐘後到「文件」頁看看，先不要重按。' : '連不上伺服器，請檢查網路後再試';
   } finally { clearTimeout(timer); }
   let j;
   try { j = await r.json(); } catch (e) { throw '伺服器回應異常（' + r.status + '），請稍後再試'; }
@@ -406,6 +416,7 @@ function pvOverflow() {
 }
 window.addEventListener('resize', () => pvOverflow());
 function itemHTML(i) {
+  if (i.kind === 'cins') return `<div class="todo" data-gocins="${i.caseId}"><div class="ck lg">客</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・客戶指示・${i.status === '已回報' ? '已回報，等你確認完成' + (i.report ? '：' + esc(i.report) : '') : '要執行' + (i.due ? '・期限 ' + esc(md(i.due)) : '')}</div></div>${chip(i.status === '待執行' && i.due && i.due < today() ? '逾期' : i.status, i.status === '待執行' && i.due && i.due < today() ? 'c-bad' : EXEC_CLS[i.status])}</div>`;
   if (i.kind === 'wr') return `<div class="todo" data-gowr="${i.caseId}"><div class="ck lg">修</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・保固報修・${esc(md(i.created))}</div></div>${chip(i.status, REPAIR_CLS[i.status])}</div>`;
   if (i.kind === 'miss') return `<div class="todo" data-miss="${i.caseId}|${i.date}"><div class="ck lg">誌</div>
     <div style="flex:1"><div class="tt">日誌未填：${esc(i.caseName)} ${esc(md(i.date))}（${'日一二三四五六'[new Date(i.date.replace(/\//g, '-')).getDay()]}）</div><div class="s">補寫日誌，或登記當天無施工</div></div>${chip('漏填', 'c-bad')}</div>`;
@@ -456,6 +467,7 @@ function bindItems() {
   $$('[data-goins]').forEach(e => e.onclick = () => openCase(e.dataset.goins, 'instr'));
   $$('[data-golog]').forEach(e => e.onclick = () => { const [c, l] = e.dataset.golog.split('|'); openCase(c, 'log', l); });
   $$('[data-gowr]').forEach(e => e.onclick = () => openCase(e.dataset.gowr, 'sum'));
+  $$('[data-gocins]').forEach(e => e.onclick = () => openCase(e.dataset.gocins, 'client'));
   $$('[data-miss]').forEach(e => e.onclick = () => { if (preview()) return; const [c, dd] = e.dataset.miss.split('|'); missSheet(c, dd); });
   $$('[data-goprog]').forEach(e => e.onclick = () => { const [c, k] = e.dataset.goprog.split('|'); S.ptab = k === 'ms' ? 'ms' : 'plan'; openCase(c, 'prog'); });
 }
@@ -1114,19 +1126,40 @@ function newIns(logId) {
 const fmtMoney = v => v === '' || v == null ? '' : (Number(v) < 0 ? '−' : '') + 'NT$ ' + Math.abs(Number(String(v).replace(/[^0-9.\-]/g, '')) || 0).toLocaleString();
 const CI_CLS = { '待確認': 'c-warn', '已確認': 'c-ok', '客戶不同意': 'c-bad' };
 const canCI = x => leader() || S.data.info['負責設計師'] === ME().id || (x && x.by === ME().id);
+const EXEC_CLS = { '待執行': 'c-warn', '已回報': 'c-info', '已完成': 'c-ok', '不需執行': 'c-mute' };
+const ciLead = () => leader() || S.data.info['負責設計師'] === ME().id;
+/** 客戶指示的執行追蹤（與客戶確認分開：客戶確認≠事情做完） */
+function ciExecHTML(x, pv) {
+  if (x.exec === '不需執行') return '<div class="lst">客戶不同意，這項不需執行</div>';
+  const late = x.exec === '待執行' && x.due && x.due < today();
+  const info = `<div class="lst ${x.exec === '已完成' ? 'ok' : late ? 'bad' : ''}">執行：${esc(x.exec)}・${esc(short(pname(x.owner)) || '未指定')}${x.due ? '・期限 ' + esc(md(x.due)) + (late ? '（逾期）' : '') : ''}${x.report ? '<br>處理回報：' + esc(x.report).replace(/\n/g, '<br>') : ''}${x.doneBy ? '<br>' + esc(short(pname(x.doneBy))) + ' 確認完成・' + esc(String(x.doneAt).slice(5, 16)) : ''}</div>`;
+  if (pv) return info;
+  const b = [];
+  if (x.exec === '待執行' && (x.owner === ME().id || ciLead())) b.push(`<button class="btn pri sm" data-crep="${x.id}">回報處理結果</button>`);
+  if (x.exec === '已回報' && ciLead()) b.push(`<button class="btn ok sm" data-cdone="${x.id}">確認完成</button><button class="btn ghost sm" data-cret="${x.id}">退回重做</button>`);
+  return info + (b.length ? `<div class="btns" style="flex-wrap:wrap">${b.join('')}</div>` : '');
+}
+function ciAct(x, act) {
+  if (guard()) return;
+  const t = { report: ['回報處理結果', '例如：木作已改成到頂 260cm，已拍照', '已回報'], done: ['確認完成', '可補充說明（選填）', '已確認完成'], return: ['退回重做', '請寫退回原因', '已退回'] }[act];
+  sheet(`<h3>${t[0]}</h3><div class="s">${esc(x.text)}</div>${x.report && act !== 'report' ? `<div class="lst">處理回報：${esc(x.report)}</div>` : ''}<label>${act === 'report' ? '處理結果' : act === 'return' ? '原因' : '說明'}</label><textarea id="cxt" placeholder="${t[1]}"></textarea><div class="btns"><button class="btn pri" id="cxgo">送出</button></div>`);
+  $('#cxgo').onclick = () => { const text = $('#cxt').value.trim(); if (act !== 'done' && !text) return toast(act === 'report' ? '請寫處理結果' : '請寫原因'); planAct('actClientIns', { id: x.id, act, text }, t[2]); };
+}
 function ciHTML(x) {
   const pv = ro();
   return `<div class="prow ${S.copen && S.copen[x.id] ? 'open' : ''}" data-cid="${x.id}">
     <div class="phead"><div class="pmain"><div class="pt">${esc(x.text)}</div>
       <div class="ps">${esc(md(x.date))}・${esc(x.source)}・${esc(short(pname(x.by)))} 記錄</div>
-      ${x.impact ? `<div class="ps pchk">影響費用或工期${x.amount ? '・追加減 ' + fmtMoney(x.amount) : ''}${x.days ? '・工期 ' + esc(x.days) + ' 天' : ''}</div>` : ''}</div>${chip(x.status, CI_CLS[x.status])}</div>
+      ${x.impact ? `<div class="ps pchk">影響費用或工期${x.amount ? '・追加減 ' + fmtMoney(x.amount) : ''}${x.days ? '・工期 ' + esc(x.days) + ' 天' : ''}</div>` : ''}</div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${chip(x.status, CI_CLS[x.status])}${x.exec !== '不需執行' ? chip(x.exec, EXEC_CLS[x.exec]) : ''}</div></div>
     <div class="pbody">
       ${x.locked ? `<div class="lst ok">${esc(x.status)}：${esc(x.method)}・${esc(String(x.confirmedAt).slice(5, 16))}${x.note ? '<br>' + esc(x.note) : ''}</div>
         <div class="pgrid">${[x.sign, x.shot].filter(Boolean).map(p => `<div class="pc" data-ph="${esc(p)}">${S.thumbs[p] ? `<img src="${S.thumbs[p].src}">` : ''}<span>${p === x.sign ? '客戶簽名' : '回覆截圖'}</span></div>`).join('')}</div>` : ''}
       ${!pv ? `<div class="btns" style="flex-wrap:wrap">
         ${!x.locked && canCI(x) ? `<button class="btn pri sm" data-cconf="${x.id}">登記客戶確認</button><button class="btn ghost sm" data-cedit="${x.id}">修改</button>` : ''}
         ${canCI(null) ? `<button class="btn ghost sm" data-cpdf="${x.id}">確認單 PDF</button>` : ''}</div>` : ''}
-      ${x.locked ? '<div class="hint">已確認的紀錄不能修改；要更正請另記一筆。</div>' : ''}
+      ${ciExecHTML(x, pv)}
+      ${!pv && x.locked && canCI(x) && x.exec !== '已完成' && x.exec !== '不需執行' ? `<div class="btns"><button class="btn ghost sm" data-cedit="${x.id}">改執行人／期限</button></div>` : ''}
+      ${x.locked ? '<div class="hint">客戶已確認的內容不能修改；要更正請另記一筆。</div>' : ''}
     </div></div>`;
 }
 function vClient() {
@@ -1168,6 +1201,9 @@ function vClient() {
   $$('[data-cpdf]').forEach(b => b.onclick = () => docShare('clientPdf', { insId: b.dataset.cpdf }));
   $$('[data-cedit]').forEach(b => b.onclick = () => ciForm(fx(b.dataset.cedit), ''));
   $$('[data-cconf]').forEach(b => b.onclick = () => ciConfirm(fx(b.dataset.cconf)));
+  $$('[data-crep]').forEach(b => b.onclick = () => ciAct(fx(b.dataset.crep), 'report'));
+  $$('[data-cdone]').forEach(b => b.onclick = () => ciAct(fx(b.dataset.cdone), 'done'));
+  $$('[data-cret]').forEach(b => b.onclick = () => ciAct(fx(b.dataset.cret), 'return'));
   $$('[data-ph]').forEach(p => p.onclick = () => { const t = S.thumbs[p.dataset.ph]; if (t && t.url) window.open(t.url, '_blank'); });
   ciThumbs();
 }
@@ -1193,6 +1229,13 @@ function meetForm(m) {
 function ciForm(x, meetingId) {
   if (guard()) return;
   const mid = x ? x.meetingId : meetingId;
+  const ppl = S.home.people, own = x ? x.owner : S.data.info['負責設計師'];
+  const execHTML = `<div class="fsec">誰執行</div><div class="dgrid"><div><label>執行人</label><select id="cow">${ppl.map(p => `<option value="${p.id}" ${p.id === own ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div><div><label>執行期限</label><input type="date" id="cdue" value="${toInput(x ? x.due : '')}"></div></div><div class="hint">客戶確認只代表客戶同意；事情要由執行人做完、回報，再由負責設計師確認完成。</div>`;
+  if (x && x.locked) {
+    sheet(`<h3>改執行人／期限</h3><div class="s">${esc(x.text)}</div>${execHTML}<div class="btns"><button class="btn pri" id="cgo">儲存</button></div>`);
+    $('#cgo').onclick = () => planAct('saveClientIns', { caseId: S.cur, id: x.id, meetingId: x.meetingId || '', source: x.source, date: x.date, text: x.text, impact: x.impact, amount: x.amount, days: x.days, owner: $('#cow').value, due: $('#cdue').value }, '已儲存');
+    return;
+  }
   sheet(`<h3>${x ? '修改客戶指示' : mid ? '新增會議決議事項' : '記錄客戶指示'}</h3><div class="s">${mid ? '會議：' + esc((S.data.meetings.find(m => m.id === mid) || {}).name || '') : '客戶用 LINE、口頭或電話交代的事'}</div>
     ${!mid ? `<label>來源</label><div class="seg" id="csrc">${['LINE', '口頭', '電話', '其他'].map(o => `<button data-v="${o}" class="${(x ? x.source : 'LINE') === o ? 'on' : ''}">${o}</button>`).join('')}</div>` : ''}
     <label>日期</label><input type="date" id="cd" value="${toInput(x ? x.date : today())}">
@@ -1200,14 +1243,17 @@ function ciForm(x, meetingId) {
     <label>是否影響費用或工期</label><div class="seg" id="cimp"><button data-v="N" class="${x && x.impact ? '' : 'on'}">不影響</button><button data-v="Y" class="${x && x.impact ? 'on' : ''}">會影響</button></div>
     <div id="cimpbox" style="display:${x && x.impact ? 'block' : 'none'}"><div class="dgrid"><div><label>追加減金額（減項填負數）</label><input id="ca" inputmode="numeric" value="${esc(x ? x.amount : '')}"></div><div><label>影響工期（天）</label><input id="cdy" inputmode="numeric" value="${esc(x ? x.days : '')}"></div></div>
     <div class="warnbox">影響費用或工期的事項，請先讓客戶確認再施工。</div></div>
+    ${execHTML}
     <div class="btns"><button class="btn pri" id="cgo">儲存</button></div>`);
   const segv = id => { const b = document.querySelector(`#${id} .on`); return b ? b.dataset.v : ''; };
   ['csrc', 'cimp'].forEach(id => $$(`#${id} button`).forEach(b => b.onclick = () => { $$(`#${id} button`).forEach(o => o.classList.remove('on')); b.classList.add('on'); if (id === 'cimp') $('#cimpbox').style.display = b.dataset.v === 'Y' ? 'block' : 'none'; }));
   $('#cgo').onclick = () => {
     const text = $('#ct').value.trim(); if (!text) return toast('請填寫內容');
-    planAct('saveClientIns', { caseId: S.cur, id: x ? x.id : '', meetingId: mid || '', source: mid ? '會議' : segv('csrc'), date: $('#cd').value, text, impact: segv('cimp') === 'Y', amount: $('#ca').value.trim(), days: $('#cdy').value.trim() }, '已記錄');
+    planAct('saveClientIns', { caseId: S.cur, id: x ? x.id : '', meetingId: mid || '', source: mid ? '會議' : segv('csrc'), date: $('#cd').value, text, impact: segv('cimp') === 'Y', amount: $('#ca').value.trim(), days: $('#cdy').value.trim(), owner: $('#cow').value, due: $('#cdue').value }, '已記錄');
   };
 }
+/** 畫布上是否完全沒有筆跡（雙重保險） */
+function blankPad(c) { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4) if (d[i]) return false; return true; }
 /** 登記客戶確認：現場簽名（手指簽在畫面上）、LINE 回覆截圖、或其他方式 */
 function ciConfirm(x) {
   if (guard()) return;
@@ -1220,7 +1266,8 @@ function ciConfirm(x) {
     <div class="warnbox">登記後就會鎖定，不能再修改。</div>
     <div class="btns"><button class="btn pri" id="cgo">登記</button></div>`);
   const pad = $('#spad'), ctx = pad.getContext('2d'); let drawn = false, shot = '';
-  const fit = () => { const r = pad.getBoundingClientRect(); pad.width = r.width * 2; pad.height = r.height * 2; ctx.scale(2, 2); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.strokeStyle = '#1f1b18'; };
+  // 重設畫布大小會清空畫面，簽名狀態必須一起歸零，避免送出空白簽名
+  const fit = () => { const r = pad.getBoundingClientRect(); pad.width = r.width * 2; pad.height = r.height * 2; ctx.scale(2, 2); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.strokeStyle = '#1f1b18'; drawn = false; };
   setTimeout(fit, 30);
   let last = null;
   const pos = e => { const r = pad.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return [t.clientX - r.left, t.clientY - r.top]; };
@@ -1233,18 +1280,22 @@ function ciConfirm(x) {
   $('#shf').onchange = async () => { const f = $('#shf').files[0]; if (!f) return; $('#shs').textContent = '處理中…'; try { shot = await shrink(f, 1400); $('#shs').textContent = '已附上截圖'; } catch (e) { $('#shs').textContent = '無法讀取這張圖'; } };
   $('#cgo').onclick = () => {
     const method = segv('cmt');
-    if (method === '現場簽名' && !drawn) return toast('請客戶在框內簽名');
+    if (method === '現場簽名' && (!drawn || blankPad(pad))) return toast('請客戶在框內簽名');
     if (method === 'LINE回覆' && !shot) return toast('請附上截圖');
     planAct('confirmClientIns', { id: x.id, status: segv('cst'), method, sign: method === '現場簽名' ? pad.toDataURL('image/png').split(',')[1] : '', shot: method === 'LINE回覆' ? shot : '', note: $('#cn').value.trim() }, '已登記客戶確認');
   };
 }
 /** 產生文件 PDF 後提供分享／下載（客戶確認單、會議記錄、週報、工程履歷共用） */
+const PDF_BUSY = {};
 async function docShare(action, payload) {
   if (guard()) return;
-  busy(true, '產生 PDF 中…（約 10～30 秒）');
+  const key = action + JSON.stringify(payload);
+  if (PDF_BUSY[key]) return toast('這份文件正在產生中，請稍候');
+  PDF_BUSY[key] = 1;
+  busy(true, action === 'reportPdf' && payload.kind === 'resume' ? '產生工程履歷中…照片多時可能要 1～3 分鐘，請不要關掉畫面' : '產生 PDF 中…（約 10～60 秒）');
   let r;
-  try { r = await API(action, payload); } catch (e) { busy(false); return toast(e); }
-  busy(false);
+  try { r = await API(action, payload); } catch (e) { busy(false); delete PDF_BUSY[key]; return toast(e); }
+  busy(false); delete PDF_BUSY[key];
   const bytes = Uint8Array.from(atob(r.data), c => c.charCodeAt(0)), file = new File([bytes], r.name, { type: 'application/pdf' });
   const url = URL.createObjectURL(file), can = navigator.canShare && navigator.canShare({ files: [file] });
   sheet(`<h3>PDF 已產生</h3><div class="s">${esc(r.name)}<br>已存進案件雲端資料夾，並列在「文件」頁。</div>
@@ -1292,13 +1343,13 @@ let NL = null;
 function logForm(log, forDate) {
   if (guard()) return;
   const d = new Date(), today = forDate ? toInput(forDate) : d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  NL = { id: log ? log.id : null, trades: log ? log.trades.slice() : [], photos: [], old: log ? log.photos.slice() : [] };
+  NL = { id: log ? log.id : null, trades: log ? log.trades.slice() : [], photos: [], old: log ? log.photos.map(p => Object.assign({}, p, { orig: p.note || '' })) : [], del: [] };
   const names = S.home.trades.map(t => t.name), extra = NL.trades.filter(t => !names.includes(t));
   const draft = !log || log.status === '草稿';
   const signed = log && (log.status === '已簽核' || log.resign || log.signedOnce);
   sheet(`<h3>${log ? '修改日誌' : '新增日誌'}</h3><div class="s">${esc(S.data.info['案件名稱'])}${log ? '・建立於 ' + esc(log.created) + '（建立時間不會改變）' : ''}</div>
     ${log && log.returnNote && log.status === '草稿' ? `<div class="lst bad">被退回修改：${esc(log.returnNote)}</div>` : ''}
-    ${signed && log.status !== '草稿' ? `<div class="warnbox">這篇已簽核。修改施工內容、問題、日期、工種，或刪除照片，需要主管重新確認（確認前暫停分享）；只新增照片不需要。</div>` : ''}
+    ${signed && log.status !== '草稿' ? `<div class="warnbox">這篇已簽核。修改施工內容、問題、日期、工種，或刪除照片，需要主管重新確認（確認前暫停分享）；只新增照片或修改照片說明不需要。</div>` : ''}
     <label>施工日期</label><input type="date" id="ldate" value="${log ? String(log.date).replace(/\//g, '-') : today}">
     <div class="hint" id="latehint"></div>
     <label>今天的工種（可複選）</label><div class="tpick" id="ltr">${names.concat(extra).map(n => `<button data-t="${esc(n)}">${esc(n)}</button>`).join('')}<button class="other" id="oth">＋ 其他</button></div>
@@ -1334,15 +1385,17 @@ function logForm(log, forDate) {
 }
 function drawPh() {
   if (!$('#lph')) return;
-  const old = NL.old.map(p => `<div class="phi">${S.thumbs[p.path] ? `<img src="${S.thumbs[p.path].src}">` : '<div class="ph0"></div>'}<div style="flex:1;font-size:13px">${esc(p.note || '（無說明）')}</div><button class="rm" data-delold="${p.id}">✕</button></div>`).join('');
+  const old = NL.old.map(p => NL.del.includes(p.id)
+    ? `<div class="phi" style="opacity:.55">${S.thumbs[p.path] ? `<img src="${S.thumbs[p.path].src}">` : '<div class="ph0"></div>'}<div style="flex:1;font-size:13px">按「儲存修改」後刪除</div><button class="btn ghost sm" data-undel="${p.id}">復原</button></div>`
+    : `<div class="phi">${S.thumbs[p.path] ? `<img src="${S.thumbs[p.path].src}">` : '<div class="ph0"></div>'}<input data-oi="${p.id}" placeholder="照片說明" value="${esc(p.note || '')}"><button class="rm" data-delold="${p.id}">✕</button></div>`).join('');
   const neu = NL.photos.map((p, i) => `<div class="phi"><img src="data:image/jpeg;base64,${p.data}"><input data-i="${i}" placeholder="照片說明，例如：主臥北牆插座位置" value="${esc(p.note)}"><button class="rm" data-rm="${i}">✕</button></div>`).join('');
   $('#lph').innerHTML = old + neu;
   $$('#lph input').forEach(s => s.oninput = () => NL.photos[+s.dataset.i].note = s.value);
   $$('[data-rm]').forEach(b => b.onclick = () => { NL.photos.splice(+b.dataset.rm, 1); drawPh(); });
-  $$('[data-delold]').forEach(b => b.onclick = async () => {
-    if (!confirmDel(b)) return;
-    busy(true, '刪除照片…'); try { await API('deletePhoto', { id: b.dataset.delold }); NL.old = NL.old.filter(p => p.id !== b.dataset.delold); drawPh(); toast('照片已刪除'); } catch (e) { toast(e); } finally { busy(false); }
-  });
+  $$('#lph input[data-oi]').forEach(s => s.oninput = () => { NL.old.find(p => p.id === s.dataset.oi).note = s.value; });
+  // 舊照片先標記，按「儲存修改」才真的刪；直接關掉表單就什麼都不會變
+  $$('[data-delold]').forEach(b => b.onclick = () => { NL.del.push(b.dataset.delold); drawPh(); });
+  $$('[data-undel]').forEach(b => b.onclick = () => { NL.del = NL.del.filter(x => x !== b.dataset.undel); drawPh(); });
 }
 function confirmDel(b) { if (b.dataset.sure) return true; b.dataset.sure = 1; b.textContent = '確定刪除？'; b.style.fontSize = '12px'; b.style.color = 'var(--bad)'; setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = '✕'; b.style.fontSize = ''; b.style.color = ''; } }, 3000); return false; }
 function shrink(file, max = 1600) {
@@ -1359,11 +1412,12 @@ function shrink(file, max = 1600) {
 }
 async function saveLogNow(submit) {
   const text = $('#ltxt').value.trim();
-  if (!text && !NL.photos.length && !NL.old.length) return toast('請至少寫一句今日狀況或放一張照片');
+  if (!text && !NL.photos.length && NL.old.length <= NL.del.length) return toast('請至少寫一句今日狀況或放一張照片');
   if (!NL.trades.length) return toast('請選今天的工種');
   busy(true, NL.photos.length ? `上傳 ${NL.photos.length} 張照片中…` : '儲存中…');
   try {
-    const p = { caseId: S.cur, date: $('#ldate').value, trades: NL.trades, text, issue: $('#liss').value.trim(), photos: NL.photos, submit: !!submit };
+    const notes = {}; NL.old.forEach(x => { if (!NL.del.includes(x.id) && (x.note || '') !== x.orig) notes[x.id] = x.note || ''; });
+    const p = { caseId: S.cur, date: $('#ldate').value, trades: NL.trades, text, issue: $('#liss').value.trim(), photos: NL.photos, submit: !!submit, notes, delPhotos: NL.del };
     const id = NL.id ? await API('updateLog', Object.assign({ id: NL.id }, p)) : await API('saveLog', p);
     await refreshCase(); closeSheet(); S.tab = 'log'; S.open = { [id]: true }; render(); toast(submit ? '已送出' : NL.id ? '已儲存修改' : '已存成草稿'); reloadHome().catch(() => { });
   } catch (e) { toast(e); } finally { busy(false); }
@@ -1378,7 +1432,7 @@ const toInput = v => String(v || '').slice(0, 10).replace(/\//g, '-');
 /** 修改案件資料（主管、行政、負責設計師；金額限可看金額者） */
 function caseForm() {
   if (preview()) return guard();
-  const c = S.data.info, money = ME().seeMoney;
+  const c = S.data.info, money = ME().seeMoney, moneyEdit = !!S.data.canMoney;
   const ds = S.home.people.filter(p => p.role === '設計師' || p.role === 'Boss' || p.role === '主管');
   const inp = (k, id, type, ph) => `<label>${k}</label><input id="${id}" ${type ? `type="${type}"` : ''} value="${esc(type === 'date' ? toInput(c[k]) : (c[k] || ''))}" ${ph ? `placeholder="${ph}"` : ''}>`;
   sheet(`<h3>編輯案件資料</h3><div class="s">${esc(c['案件名稱'])}・只會存有改動的欄位，並記錄修改人</div>
@@ -1390,7 +1444,7 @@ function caseForm() {
     <div class="fsec">重要日期</div>
     <div class="dgrid">${CASE_DATES.map((k, i) => `<div><label>${k}</label><input id="f_d${i}" type="date" value="${esc(toInput(c[k]))}"></div>`).join('')}</div>
     <div class="fsec">其他</div>
-    ${money ? `<div class="dgrid"><div><label>設計費</label><input id="f_fee" inputmode="numeric" value="${esc(c['設計費'] || '')}"></div><div><label>工程金額</label><input id="f_amt" inputmode="numeric" value="${esc(c['工程金額'] || '')}"></div></div>` : ''}
+    ${money ? `<div class="dgrid"><div><label>設計費</label><input id="f_fee" inputmode="numeric" value="${esc(c['設計費'] || '')}" ${moneyEdit ? '' : 'disabled'}></div><div><label>工程金額</label><input id="f_amt" inputmode="numeric" value="${esc(c['工程金額'] || '')}" ${moneyEdit ? '' : 'disabled'}></div></div>${moneyEdit ? '' : '<div class="hint">金額你可以看，修改暫定只有 Boss 和行政可以。</div>'}` : ''}
     <label>雲端資料夾網址</label><input id="f_drive" value="${esc(c['Drive資料夾'] || '')}" placeholder="貼上 Google 雲端硬碟資料夾網址">
     <div class="hint">留空的話，第一次產生日誌 PDF 時系統會自動建立資料夾。</div>
     <label>備註</label><textarea id="f_note">${esc(c['備註'] || '')}</textarea>
@@ -1402,12 +1456,17 @@ function caseForm() {
       '負責設計師': $('#f_des').value, 'Drive資料夾': $('#f_drive').value.trim(), '備註': $('#f_note').value.trim()
     };
     CASE_DATES.forEach((k, i) => fields[k] = $('#f_d' + i).value);
-    if (money) { fields['設計費'] = $('#f_fee').value.trim(); fields['工程金額'] = $('#f_amt').value.trim(); }
+    if (moneyEdit) { fields['設計費'] = $('#f_fee').value.trim(); fields['工程金額'] = $('#f_amt').value.trim(); }
     if (!fields['案件名稱']) return toast('案件名稱不能空白');
     if (fields['預計開工日'] && fields['預計完工日'] && fields['預計完工日'] < fields['預計開工日']) return toast('預計完工日不能早於預計開工日');
+    // 只送出真的改過的欄位，並附上打開時看到的原值；別人同時改了別的欄位不會被蓋掉
+    const shown = k => CASE_DATES.includes(k) ? toInput(c[k]) : String(c[k] == null ? '' : c[k]);
+    const changed = {}, orig = {};
+    Object.keys(fields).forEach(k => { if (String(fields[k]) !== shown(k)) { changed[k] = fields[k]; orig[k] = c[k] == null ? '' : c[k]; } });
+    if (!Object.keys(changed).length) { closeSheet(); return toast('沒有變更'); }
     busy(true, '儲存中…');
     try {
-      const r = await API('saveCaseInfo', { id: S.cur, fields });
+      const r = await API('saveCaseInfo', { id: S.cur, fields: changed, orig });
       await refreshCase(); closeSheet(); render(); reloadHome().catch(() => { });
       toast(r.changed.length ? '已更新：' + r.changed.join('、') : '沒有變更');
     } catch (e) { toast(e); } finally { busy(false); }
