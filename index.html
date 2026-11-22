@@ -1029,6 +1029,7 @@ function pdfLine(l) {
   if (st === 'run') return '<span class="pdfst run">PDF 產生中…（可以先看下一篇，不用等）</span>';
   if (st === 'ready') return `<span class="pdfst ok">PDF 已完成・${esc(String(l.pdfAt || '').slice(5, 16))}</span>`;
   if (st === 'failed') { const j = S.pdfJobs[l.id]; return `<span class="pdfst bad">PDF 還沒產生成功${j && j.err ? '：' + esc(j.err) : ''}（簽核已完成）</span>${canMake ? ` <button class="btn ghost sm" data-mkpdf="${l.id}">重試產生 PDF</button>` : ''}`; }
+  if (l.hasPdf) return `<span class="pdfst warn">PDF 待更新（之後有修改、指示或回報）</span>${canMake ? ` <button class="btn ghost sm" data-mkpdf="${l.id}">更新 PDF</button>` : ''}`;
   return `<span class="pdfst warn">PDF 尚未產生</span>${canMake ? ` <button class="btn ghost sm" data-mkpdf="${l.id}">產生 PDF</button>` : ''}`;
 }
 /** 背景產生 PDF；同一篇同時只跑一個 */
@@ -1073,7 +1074,7 @@ function vLog() {
       <div class="lhead"><span class="caret">▶</span><span class="ld">${esc(md(l.date))}</span>
         <span class="lgs">${l.trades.map(t => `<span class="tchip" style="background:${tcolor(t)}">${esc(t)}</span>`).join('')}</span>
         ${lateDays >= 1 ? `<span class="late">補登 ${lateDays} 天</span>` : ''}
-        ${l.status !== '已簽核' ? chip(l.overdue ? '逾期未簽' : chipTxt, l.overdue || (l.status === '草稿' && l.returnNote) ? 'c-bad' : LOG_CLS[l.status]) : chip('✓ 已簽核', 'c-ok') + (pdfStateOf(l) === 'run' ? chip('PDF 產生中', 'c-info') : pdfStateOf(l) === 'ready' ? '' : chip(pdfStateOf(l) === 'failed' ? 'PDF 失敗' : 'PDF 未產生', 'c-warn'))}
+        ${l.status !== '已簽核' ? chip(l.overdue ? '逾期未簽' : chipTxt, l.overdue || (l.status === '草稿' && l.returnNote) ? 'c-bad' : LOG_CLS[l.status]) : chip('✓ 已簽核', 'c-ok') + (pdfStateOf(l) === 'run' ? chip('PDF 產生中', 'c-info') : pdfStateOf(l) === 'ready' ? '' : chip(pdfStateOf(l) === 'failed' ? 'PDF 失敗' : l.hasPdf ? 'PDF 待更新' : 'PDF 未產生', 'c-warn'))}
         ${logNeedsMe(l) && !pv ? '<span class="idot" title="需要你處理"></span>' : ''}
         ${l.issue ? '<span class="idot" style="background:var(--warn)" title="有問題"></span>' : ''}${li.length ? `<span class="icount">${li.length}</span>` : ''}
         <span class="lby">${esc(short(pname(l.by)))}</span></div>

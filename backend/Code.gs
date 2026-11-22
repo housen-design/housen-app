@@ -429,7 +429,7 @@ function getCase_(me, p) {
   const c = readTable_('案件').find(x => x['案件ID'] === p.id);
   if (!c) throw new Error('找不到案件');
   if (!me.seeMoney) { delete c['設計費']; delete c['工程金額']; }
-  const photos = readTable_('日誌照片').filter(x => x['案件ID'] === p.id);
+  const photos = readTable_('日誌照片').filter(x => x['案件ID'] === p.id), insAt = insAtMap_(p.id);
   const ph = x => ({ id: x['照片ID'], path: x['照片'], note: x['說明'] || [x['空間'], x['位置']].filter(String).join('・'), noteBy: x['說明修改人'], noteAt: x['說明修改時間'] });
   const logs = readTable_('工程日誌').filter(l => l['案件ID'] === p.id).map(l => {
     const mine = photos.filter(x => x['日誌ID'] === l['日誌ID']);
@@ -444,7 +444,7 @@ function getCase_(me, p) {
       overdue: logStatus_(l) === LS.PENDING && overdue_(l['簽核期限']), escal: l['轉Boss確認'] === 'Y',
       signedBy: l['簽核者'], signedAt: l['簽核時間'], resign: resign, snap: resign ? parseSnap_(l) : null,
       signedOnce: !!l['簽核內容'], minor: l['小修待看'] === 'Y', returnNote: l['退回原因'],
-      pdfAt: l['PDF時間'], hasPdf: !!l['PDF檔ID'], pdfState: pdfState_(l), pdfErr: l['PDF錯誤'] || '', revisedAt: l['修訂時間'], shares: +l['分享次數'] || 0, sharedBy: l['最後分享人'], sharedAt: l['最後分享時間'],
+      pdfAt: l['PDF時間'], hasPdf: !!l['PDF檔ID'], pdfState: pdfState_(l, insAt[l['日誌ID']] || ''), pdfErr: l['PDF錯誤'] || '', revisedAt: l['修訂時間'], shares: +l['分享次數'] || 0, sharedBy: l['最後分享人'], sharedAt: l['最後分享時間'],
       downloads: +l['下載次數'] || 0, downloadedBy: l['最後下載人'], downloadedAt: l['最後下載時間'], rev: rev_('工程日誌', l), fv: fv_('工程日誌', l)
     };
   }).sort((a, b) => (b.date + b.created).localeCompare(a.date + a.created));
@@ -625,10 +625,23 @@ function signLog_(me, d) {
 }
 
 /** 日誌 PDF 是否為最新：有檔案，且產生時間不早於簽核／修訂時間 */
-function pdfFresh_(l) { return !!l['PDF檔ID'] && String(l['PDF時間'] || '') >= String(l['修訂時間'] || l['簽核時間'] || ''); }
-function pdfState_(l) {
+/** 這篇日誌的主管指示最後一次變動時間（下指示、回報、結案）：PDF 裡有指示與回報，變動後 PDF 要更新 */
+function insAtMap_(cid) {
+  const m = {};
+  tryTable_('主管指示').filter(i => i['案件ID'] === cid && i['日誌ID']).forEach(i => {
+    const t = [i['建立時間'], i['回報時間'], i['結案時間']].map(x => String(x || '')).sort().pop();
+    if (t > (m[i['日誌ID']] || '')) m[i['日誌ID']] = t;
+  });
+  return m;
+}
+function pdfFresh_(l, insAt) {
+  if (!l['PDF檔ID']) return false;
+  const need = [l['修訂時間'] || l['簽核時間'] || '', insAt === undefined ? (insAtMap_(l['案件ID'])[l['日誌ID']] || '') : (insAt || '')].map(String).sort().pop();
+  return String(l['PDF時間'] || '') >= need;
+}
+function pdfState_(l, insAt) {
   if (logStatus_(l) !== LS.SIGNED) return '';
-  if (pdfFresh_(l)) return 'ready';
+  if (pdfFresh_(l, insAt)) return 'ready';
   return l['PDF錯誤'] ? 'failed' : 'pending';
 }
 /** 背景產生日誌 PDF（簽核人、負責設計師、主管可做）。已是最新就不重產；失敗會記錄原因，畫面顯示「失敗，重試」 */

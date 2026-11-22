@@ -4,7 +4,7 @@
   try { const k = '__t'; localStorage.setItem(k, 1); localStorage.removeItem(k); } catch (e) {
     const m = {}; try { Object.defineProperty(window, 'localStorage', { configurable: true, value: { getItem: k => k in m ? m[k] : null, setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; }, clear: () => { for (const k in m) delete m[k]; } } }); } catch (e2) { }
   }
-  const DB_KEY = 'housen_demo_db_v2', USER_KEY = 'housen_demo_user';
+  const DB_KEY = 'housen_demo_db_v4', USER_KEY = 'housen_demo_user';
   const PEOPLE = [['boss@demo', '林柏元', 'Boss：看全部、下指示、簽核蘋芳的日誌、改設定'], ['pf@demo', '施蘋芳', '主管：簽核凱翔的日誌、排進度'],
     ['kx@demo', '許凱翔', '設計助理：寫日誌、回報指示'], ['rita@demo', '林妙娟', '行政財務：看金額、統計、報修'], ['candy@demo', '施明媛', '行政助理']];
   const mem = {};
@@ -27,13 +27,60 @@
   const user = () => LS.get(USER_KEY);
   const PDF_B64 = btoa('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 120]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj 4 0 obj<</Length 60>>stream\nBT /F1 14 Tf 20 60 Td (HOUSEN DEMO - sample PDF) Tj ET\nendstream endobj 5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF');
 
+  // 用文件的 HTML 在手機上產生真正的 PDF（正式版由 Google 產生；版面可能略有差異）
+  async function htmlToPdfBlob(html) {
+    if (!window.html2canvas || !window.jspdf) throw new Error('PDF 工具載入失敗');
+    // 放進獨立的框裡排版，避免和系統畫面的樣式互相干擾
+    const fr = document.createElement('iframe');
+    fr.style.cssText = 'position:fixed;left:0;top:0;width:794px;height:1123px;border:0;opacity:0;pointer-events:none;z-index:-1';
+    document.body.appendChild(fr);
+    try {
+      await new Promise(res => { fr.onload = res; fr.srcdoc = html.replace('<head>', '<head><style>body{margin:0;padding:28px 34px;width:794px;box-sizing:border-box;background:#fff}</style>'); });
+      const d = fr.contentDocument;
+      await Promise.all(Array.from(d.images).map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
+      try { await d.fonts.ready; } catch (e) { }
+      fr.style.height = d.documentElement.scrollHeight + 'px';
+      const canvas = await html2canvas(d.body, { scale: 2, backgroundColor: '#fff', windowWidth: 794, windowHeight: d.documentElement.scrollHeight, useCORS: true });
+      const pdf = new jspdf.jsPDF({ unit: 'pt', format: 'a4' });
+      const W = pdf.internal.pageSize.getWidth(), H = pdf.internal.pageSize.getHeight();
+      const pagePx = Math.floor(canvas.width * H / W);   // 一頁 A4 對應的畫布高度
+      for (let y = 0, n = 0; y < canvas.height; y += pagePx, n++) {
+        const h = Math.min(pagePx, canvas.height - y), c = document.createElement('canvas');
+        c.width = canvas.width; c.height = h;
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, h); g.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+        if (n) pdf.addPage();
+        pdf.addImage(c.toDataURL('image/jpeg', 0.88), 'JPEG', 0, 0, W, h * W / canvas.width);
+      }
+      return pdf.output('blob');
+    } finally { fr.remove(); }
+  }
+  const fileOfUrl = u => { const m = String(u || '').match(/demo\.file\/(.+)$/); return m ? db.files[m[1]] : null; };
+  async function realPdfB64(url) {
+    const f = fileOfUrl(url);
+    if (!f || !f.html) return PDF_B64;
+    const blob = await htmlToPdfBlob(f.html), buf = new Uint8Array(await blob.arrayBuffer());
+    let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+  window.__demoPdfB64 = realPdfB64;
+  // 下載：試玩版的頁面不允許直接下載，改用平台的「下載」功能（會先跳出確認）
+  async function saveFile(name, blob) {
+    try {
+      const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+      if (!dl) return note('這個瀏覽器的試玩版不允許下載檔案；正式版可以直接下載。');
+      await dl.save({ filename: name, data: blob });
+    } catch (e) { note('下載沒有完成：' + (e && e.message || e)); }
+  }
+  window.__demoSave = saveFile;
   window.MOCK = async function (action, p) {
     if (!user()) await pick(true);
-    await new Promise(r => setTimeout(r, action === 'home' || action === 'case' ? 120 : 250));
-    let r;
-    try { r = E.run(user(), action, JSON.parse(JSON.stringify(p || {}))); } catch (e) { throw String(e && e.message || e); }
-    if (r && r.data && r.name && /\.pdf$/i.test(r.name)) r = Object.assign({}, r, { data: PDF_B64 });
+    // 跟正式版一樣：請求一送出，「伺服器」就先處理並存檔，回應才慢慢回來（關掉頁面也不會讓已送出的動作消失）
+    let r, err = null;
+    try { r = E.run(user(), action, JSON.parse(JSON.stringify(p || {}))); } catch (e) { err = String(e && e.message || e); }
     if (READS.indexOf(action) < 0) save();
+    await new Promise(z => setTimeout(z, action === 'home' || action === 'case' ? 120 : 250));
+    if (err) throw err;
+    if (r && r.data && r.name && /\.pdf$/i.test(r.name)) r = Object.assign({}, r, { data: await realPdfB64(r.url) });
     return r ? JSON.parse(JSON.stringify(r)) : r;
   };
 
@@ -70,7 +117,7 @@
     document.getElementById('demoSwitch').onclick = () => { pick(); };
     document.getElementById('demoTheme').onchange = e => { setTheme(e.target.value); };
   }
-  function restart() { try { S.as = ''; S.real = null; S.thumbs = {}; S.cur = null; S.home = null; S.data = null; $('#top').style.display = ''; $('#main').style.padding = ''; boot(); } catch (e) { location.reload(); } }
+  function restart() { try { S.as = ''; S.real = null; S.thumbs = {}; S.cur = null; S.insFilter = 'open'; S.copen = {}; S.popen = {}; S.ptab = null; S.open = {}; S.tab = 'sum'; S.pdfJobs = {}; S.home = null; S.data = null; $('#top').style.display = ''; $('#main').style.padding = ''; boot(); } catch (e) { location.reload(); } }
   // 登出 → 回到選身分
   window.addEventListener('load', () => {
     window.showLogin = function () { LS.del(USER_KEY); pick(); };
@@ -92,7 +139,20 @@
     if (fm) {
       const f = db.files[fm[1]];
       if (!f) return viewer('<div class="dv-msg">找不到這個檔案</div>');
-      if (f.html) { const fr = document.createElement('iframe'); fr.className = 'dv-frame'; fr.srcdoc = f.html; return viewer(fr); }
+      if (f.html) {
+        const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-direction:column;height:100%';
+        const bar = document.createElement('div'); bar.className = 'dv-dl';
+        bar.innerHTML = '<button id="dvdl">下載這份 PDF</button><span>試玩版在手機上轉成 PDF，正式版由 Google 產生</span>';
+        const fr = document.createElement('iframe'); fr.className = 'dv-frame'; fr.srcdoc = f.html; fr.style.flex = '1';
+        wrap.appendChild(bar); wrap.appendChild(fr); viewer(wrap);
+        document.getElementById('dvdl').onclick = async function () {
+          this.disabled = true; this.textContent = '產生 PDF 中…';
+          try { const name = (f.name || 'document').replace(/\.html?$/i, '').replace(/(\.pdf)?$/i, '.pdf'); await saveFile(name, await htmlToPdfBlob(f.html)); }
+          catch (e) { note('PDF 產生失敗：' + (e && e.message || e)); }
+          this.disabled = false; this.textContent = '下載這份 PDF';
+        };
+        return;
+      }
       if (/^image\//.test(f.type)) return viewer(`<img class="dv-img" src="data:${f.type};base64,${btoa(f.content)}">`);
       return viewer('<div class="dv-msg">這是示範用的 PDF，正式版會在 Google 雲端開啟。</div>');
     }
@@ -103,6 +163,21 @@
     }
     return false;
   }
+  // 把試玩用的雲端連結、下載連結拿掉 href，避免瀏覽器另開一個連不上的頁面；改由點擊處理
+  const fixLinks = root => (root.querySelectorAll ? root.querySelectorAll('a[href]') : []).forEach(a => {
+    const h = a.getAttribute('href') || '';
+    if (/^https:\/\/demo\.(file|folder)\//.test(h)) { a.dataset.demoHref = h; a.removeAttribute('href'); a.removeAttribute('target'); a.style.cursor = 'pointer'; }
+    else if (a.hasAttribute('download') && /^(blob|data):/.test(h)) { a.dataset.demoDl = h; a.dataset.demoName = a.getAttribute('download') || 'file.pdf'; a.removeAttribute('href'); a.removeAttribute('download'); a.style.cursor = 'pointer'; }
+  });
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) { fixLinks(n); if (n.matches && n.matches('a')) fixLinks(n.parentNode || n); } }))).observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener('click', async e => {
+    const a = e.target.closest && e.target.closest('a[data-demo-href],a[data-demo-dl]');
+    if (!a) return;
+    e.preventDefault();
+    if (a.dataset.demoHref) { e.stopPropagation(); openDemo(a.dataset.demoHref); return; }
+    const blob = await (await fetch(a.dataset.demoDl)).blob();
+    saveFile(a.dataset.demoName, blob);
+  }, true);
   const _open = window.open;
   window.open = function (url) { if (/^https:\/\/demo\.(file|folder)\//.test(String(url))) { openDemo(String(url)); return null; } return _open.apply(window, arguments); };
   document.addEventListener('click', e => {
@@ -125,6 +200,8 @@
 .dv-top button{background:#f3ede4;color:#2b2622;border:none;border-radius:16px;padding:7px 16px;font:inherit;font-weight:600}
 .dv-body{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}.dv-frame{width:100%;height:100%;border:0;display:block}.dv-img{max-width:100%;display:block;margin:0 auto}
 #demoNote{position:fixed;left:16px;right:16px;top:calc(40px + env(safe-area-inset-top));z-index:400;background:#2b2622;color:#fff;border-radius:12px;padding:12px 14px;font-size:14px;display:none;white-space:pre-line}
+.dv-dl{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f4f5f7;border-bottom:1px solid #e0e3e8;font-size:12px;color:#6b7280}
+.dv-dl button{background:#1f2329;color:#fff;border:0;border-radius:16px;padding:7px 14px;font:inherit;font-size:13px;font-weight:600}
 .dv-msg{padding:24px;font-size:15px;line-height:1.9}.dv-msg a{color:#8a6a4b}`;
   document.head.appendChild(css);
 })();
