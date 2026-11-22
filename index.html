@@ -232,7 +232,7 @@ h2 .act{padding:11px 6px 11px 14px;margin:-11px -6px -11px auto}
 <div class="loading" id="loading"><div class="spin"></div><span id="loadmsg">處理中…</span></div>
 
 <script>
-const S = { home: null, real: null, as: '', cur: null, data: null, tab: 'sum', filter: 'all', open: {}, thumbs: {}, insFilter: 'open', showDone: false };
+const S = { home: null, real: null, as: '', cur: null, nav: 0, data: null, tab: 'sum', filter: 'all', open: {}, thumbs: {}, insFilter: 'open', showDone: false };
 
 const TOKEN_KEY = 'housen_token';
 const READ_ACTIONS = ['home', 'case', 'thumbs', 'pdfView'];   // 只讀；預覽模式只允許這些
@@ -308,7 +308,11 @@ function cachePut(fn) {
   try { const c = cacheGet() || { tok: tokTail(), cases: {} }; fn(c); const ids = Object.keys(c.cases).sort((a, b) => c.cases[b].at - c.cases[a].at); ids.slice(6).forEach(k => delete c.cases[k]); localStorage.setItem(CACHE_KEY, JSON.stringify(c)); } catch (e) { try { localStorage.removeItem(CACHE_KEY); } catch (x) { } }
 }
 function cacheHome() { if (S.home && !S.as) cachePut(c => { c.home = S.home; c.at = Date.now(); }); }
-function cacheCase() { if (S.data && S.cur && !S.as) { const id = S.cur, d = S.data; cachePut(c => { c.cases[id] = { data: d, at: Date.now() }; }); } }
+/** 記住某個案件的資料；id 以資料本身為準（不用「目前畫面」），避免晚回來的資料存錯案件 */
+function cacheCase(id, d) {
+  if (S.as || !id || !d || !d.info || d.info['案件ID'] !== id) return;
+  cachePut(c => { c.cases[id] = { data: d, at: Date.now() }; });
+}
 function syncing(on) { document.body.classList.toggle('syncing', !!on); }
 async function boot() {
   if (!window.MOCK && !localStorage.getItem(TOKEN_KEY)) return showLogin();
@@ -329,7 +333,7 @@ function dueTxt(due, done) {
 }
 
 function renderHome() {
-  S.cur = null; S.data = null; S.ptab = null; closeSheet();
+  S.nav++; S.cur = null; S.data = null; S.ptab = null; closeSheet();
   const h = S.home, me = h.me;
   $('#nav').style.display = 'none';
   const open = h.items.filter(i => i.kind === 'ins' ? true : !i.done);
@@ -511,7 +515,9 @@ function newTodo(caseId) {
 }
 
 async function openCase(id, tab, logId) {
+  const nav = ++S.nav;   // 每次切換案件給一個序號；晚回來的舊請求序號不同，就只存起來、不碰畫面
   const show = () => {
+    if (nav !== S.nav) return;
     S.cur = id; S.tab = tab || S.tab || 'sum'; S.open = logId ? { [logId]: true } : (S.open || {});
     const c = S.home && S.home.cases.find(x => x.id === id); if (c) markAct(id, c.act);
     render(); if (logId) setTimeout(() => { const r = document.querySelector(`[data-lid="${logId}"]`); if (r) r.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 60);
@@ -520,17 +526,21 @@ async function openCase(id, tab, logId) {
   S.tab = tab || 'sum'; S.open = logId ? { [logId]: true } : {};
   if (hit) {   // 先顯示手機上次記住的內容（不轉圈），背景再更新
     S.data = hit.data; show(); syncing(true);
-    try { const fresh = await API('case', { id }); if (S.cur === id) { S.data = fresh; cacheCase(); if ($('#sheet').style.display !== 'block') render(); } }
-    catch (e) { netErr(e); } finally { syncing(false); }
+    try { const fresh = await API('case', { id }); cacheCase(id, fresh); if (nav === S.nav && S.cur === id) { S.data = fresh; if ($('#sheet').style.display !== 'block') render(); } }
+    catch (e) { if (nav === S.nav) netErr(e); } finally { if (nav === S.nav) syncing(false); }
     return;
   }
   busy(true, '載入案件…');
-  try { S.data = await API('case', { id }); show(); cacheCase(); }
-  catch (e) { toast(e); } finally { busy(false); }
+  try { const d = await API('case', { id }); cacheCase(id, d); if (nav === S.nav) { S.data = d; show(); } }
+  catch (e) { if (nav === S.nav) toast(e); } finally { if (nav === S.nav) busy(false); }
 }
 async function refreshCase() {
-  if (S.fresh && S.fresh.id === S.cur && Date.now() - S.fresh.at < 5000) { S.data = S.fresh.data; S.fresh = null; cacheCase(); return; }   // 存檔時已一起帶回，不用再讀
-  S.fresh = null; S.data = await API('case', { id: S.cur }); cacheCase();
+  const id = S.cur;
+  if (S.fresh && S.fresh.id === id && Date.now() - S.fresh.at < 5000) { S.data = S.fresh.data; S.fresh = null; cacheCase(id, S.data); return; }   // 存檔時已一起帶回，不用再讀
+  S.fresh = null;
+  const d = await API('case', { id });
+  cacheCase(id, d);                      // 手機記住的內容一律以「資料本身是哪個案件」為準
+  if (S.cur === id) S.data = d;          // 等待中已切到別的案件：不能把舊案件的資料放進目前畫面
 }
 
 const TABS = [['sum', '概況', '◎'], ['log', '日誌', '✎'], ['instr', '指示', '➜'], ['client', '客戶', '☺'], ['prog', '進度', '▤'], ['docs', '文件', '❐']];
@@ -801,7 +811,7 @@ async function vAdmin(tab) {
   S.atab = tab || S.atab || 'set';
   busy(true, '讀取設定…');
   let r; try { r = await API('admin', {}); } catch (e) { busy(false); return toast(e); } finally { busy(false); }
-  S.admin = r; S.cur = null;
+  S.admin = r; S.cur = null; S.nav++;
   $('#nav').style.display = 'none'; $('#fab').style.display = 'none';
   $('#top').innerHTML = `<button class="back" id="backbtn">‹ 工作總表</button><h1>系統設定</h1><div class="sub"><span>${r.canEdit ? '修改後立即生效' : '只有 Boss 可以修改，你可以查看'}</span></div>`;
   $('#backbtn').onclick = () => renderHome();
@@ -871,7 +881,7 @@ async function vStats(range) {
   let r;
   try { r = await API('stats', { from: R[0], to: R[1] }); } catch (e) { busy(false); return toast(e); }
   busy(false);
-  S.cur = null;
+  S.cur = null; S.nav++;
   $('#nav').style.display = 'none'; $('#fab').style.display = 'none';
   $('#top').innerHTML = `<button class="back" id="backbtn">‹ 工作總表</button><h1>統計</h1><div class="sub"><span>${esc(r.from)}～${esc(r.to)}</span></div>`;
   $('#backbtn').onclick = () => renderHome();
@@ -1619,9 +1629,12 @@ async function silentRefresh(manual) {
   if (!S.home) return false;
   if ($('#sheet').style.display === 'block') return false;   // 正在填表單，不重畫畫面
   try {
-    const home = await API('home'), data = S.cur ? await API('case', { id: S.cur }) : null;
+    const nav = S.nav, id = S.cur;
+    const home = await API('home'), data = id ? await API('case', { id }) : null;
     if ($('#sheet').style.display === 'block') return true;
-    S.home = home; if (data) S.data = data; S.lastLoad = Date.now(); cacheHome(); if (data) cacheCase(); notifyNew();
+    if (data) cacheCase(id, data);
+    if (nav !== S.nav) return true;   // 等待中切換了畫面：只存起來，不改目前畫面
+    S.home = home; if (data && S.cur === id) S.data = data; S.lastLoad = Date.now(); cacheHome(); notifyNew();
     if (S.cur) render(); else renderHome();
     netErr(''); return true;
   } catch (e) { netErr(e, manual); return false; }
