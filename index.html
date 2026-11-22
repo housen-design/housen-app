@@ -4,12 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>浩森工作</title>
-<meta name="theme-color" content="#f5f6f8">
-<script>/* 配色：預設「石墨金」（試看中）；手機記住使用者選的那套。warm＝原本的暖木色 */
-window.THEMES = { graphite: ['石墨金', '#f5f6f8'], navy: ['深海藍金', '#f3f5f8'], concrete: ['清水模', '#f2f2f0'], warm: ['原本暖木', '#f7f4ef'] };
-window.setTheme = function (t) { if (!THEMES[t]) return; if (t === 'warm') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = t; try { localStorage.setItem('housen_theme', t); } catch (e) { } var m = document.querySelector('meta[name=theme-color]'); if (m) m.content = THEMES[t][1]; };
-try { var _t = localStorage.getItem('housen_theme'); if (_t && THEMES[_t]) { if (_t === 'warm') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = _t; } } catch (e) { }
-</script>
+<meta name="theme-color" content="#1f2329">
+
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -199,7 +195,7 @@ body.syncing::after{content:'更新中…';position:fixed;top:calc(8px + env(saf
 .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.dgrid>div{min-width:0}.dgrid input{width:100%}
 .pvwrap{position:relative}
 .pvwrap.ovf:after{content:"";position:absolute;right:0;top:10px;height:42px;width:40px;background:linear-gradient(90deg,transparent,var(--app) 80%);pointer-events:none}
-html[data-theme=graphite] .pvwrap.ovf:after,html[data-theme=navy] .pvwrap.ovf:after{background:linear-gradient(90deg,transparent,var(--head) 80%)}
+html[data-theme=graphite] .pvwrap.ovf:after{background:linear-gradient(90deg,transparent,var(--head) 80%)}
 .pvwrap.end:after{display:none}
 .pvhint{display:none;font-size:11px;color:var(--muted);margin-top:4px;text-align:right}
 .pvwrap.ovf .pvhint{display:block}.pvwrap.end .pvhint{visibility:hidden}
@@ -226,33 +222,25 @@ h2 .act{padding:11px 6px 11px 14px;margin:-11px -6px -11px auto}
   .nav{padding-top:3px;padding-bottom:calc(3px + env(safe-area-inset-bottom))}.nav button{flex-direction:row;gap:5px;padding:7px 0}
 }
 
-/* ===== 配色（試看中，Boss 確認後定一套） ===== */
+/* ===== 配色：石墨金（Boss 11/22 定案）；保留原本暖木的變數做為底稿 ===== */
 html[data-theme=graphite]{--bg:#e8eaed;--app:#f5f6f8;--app2:#fafbfc;--card:#fff;--ink:#1d2127;--ink2:#47505b;--muted:#7a828d;--line:#e0e3e8;--line2:#c5cbd3;--soft:#eceef2;
   --acc:#8f7246;--acc2:#f1ebe1;--gold:#af9263;--ok:#3f7a5a;--ok2:#e2efe7;--warn:#b0742f;--warn2:#f6eadb;--bad:#b23b3b;--bad2:#f6e0e0;--info:#3c5d85;--info2:#e2e9f2;--hfont:"Noto Sans TC",system-ui,sans-serif;--nav:#fff}
-html[data-theme=navy]{--bg:#e3e8ee;--app:#f3f5f8;--app2:#f9fafc;--card:#fff;--ink:#13233a;--ink2:#3c4d66;--muted:#6c7a8f;--line:#dbe1e9;--line2:#c0c9d5;--soft:#e8edf3;
-  --acc:#a2814f;--acc2:#efe8dc;--gold:#bf9f68;--ok:#2f7a5b;--ok2:#e0efe8;--warn:#b07330;--warn2:#f5e9da;--bad:#b23a3f;--bad2:#f6dfe0;--info:#2d5b8f;--info2:#e0e9f4;--hfont:"Noto Sans TC",system-ui,sans-serif;--nav:#fff}
-html[data-theme=concrete]{--bg:#e2e2df;--app:#f2f2f0;--app2:#f8f8f6;--card:#fff;--ink:#242424;--ink2:#4d4d4d;--muted:#858582;--line:#dcdcd7;--line2:#c4c4be;--soft:#e9e9e5;
-  --acc:#56656d;--acc2:#e4e9ec;--gold:#af9263;--ok:#4a7558;--ok2:#e2ece4;--warn:#a8742f;--warn2:#f3e8d8;--bad:#a8433b;--bad2:#f3e0dd;--info:#4f6578;--info2:#e2e8ee;--hfont:"Noto Serif TC",serif;--nav:#fff}
-/* 深色頁首（石墨金、深海藍金）：企業感＋科技感，品牌金色點綴 */
+/* 深色頁首：企業感＋科技感，品牌金色點綴 */
 html[data-theme=graphite]{--head:#1f2329;--headInk:#f4f5f7;--headMuted:#9aa2ad}
-html[data-theme=navy]{--head:#14233a;--headInk:#f3f6fa;--headMuted:#93a3ba}
-html[data-theme=graphite] .top,html[data-theme=navy] .top{background:var(--head);color:var(--headInk);border-bottom:2px solid var(--gold)}
-html[data-theme=graphite] .top h1,html[data-theme=navy] .top h1{color:var(--headInk);letter-spacing:.03em}
-html[data-theme=graphite] .sub,html[data-theme=navy] .sub{color:var(--headMuted)}
-html[data-theme=graphite] .sub b,html[data-theme=navy] .sub b{color:var(--headInk)}
-html[data-theme=graphite] .brand,html[data-theme=navy] .brand{color:var(--gold)}
-html[data-theme=graphite] .brand a,html[data-theme=navy] .brand a{color:var(--headMuted)}
-html[data-theme=graphite] .back,html[data-theme=navy] .back{background:transparent;border:1px solid var(--gold);color:var(--gold)}
-html[data-theme=graphite] .pv button,html[data-theme=navy] .pv button{background:transparent;border-color:rgba(255,255,255,.22);color:var(--headMuted)}
-html[data-theme=graphite] .pv button.on,html[data-theme=navy] .pv button.on{background:var(--gold);border-color:var(--gold);color:var(--head)}
-html[data-theme=graphite] .top .chip,html[data-theme=navy] .top .chip{background:rgba(255,255,255,.12);color:var(--headInk)}
-html[data-theme=graphite] .top .hint,html[data-theme=navy] .top .hint,html[data-theme=graphite] .top small,html[data-theme=navy] .top small{color:var(--headMuted)}
+html[data-theme=graphite] .top{background:var(--head);color:var(--headInk);border-bottom:2px solid var(--gold)}
+html[data-theme=graphite] .top h1{color:var(--headInk);letter-spacing:.03em}
+html[data-theme=graphite] .sub{color:var(--headMuted)}
+html[data-theme=graphite] .sub b{color:var(--headInk)}
+html[data-theme=graphite] .brand{color:var(--gold)}
+html[data-theme=graphite] .brand a{color:var(--headMuted)}
+html[data-theme=graphite] .back{background:transparent;border:1px solid var(--gold);color:var(--gold)}
+html[data-theme=graphite] .pv button{background:transparent;border-color:rgba(255,255,255,.22);color:var(--headMuted)}
+html[data-theme=graphite] .pv button.on{background:var(--gold);border-color:var(--gold);color:var(--head)}
+html[data-theme=graphite] .top .chip .chip{background:rgba(255,255,255,.12);color:var(--headInk)}
+html[data-theme=graphite] .top .hint .hint,html[data-theme=graphite] .top small small{color:var(--headMuted)}
 html[data-theme] .nav button.on{color:var(--ink);font-weight:600}
 html[data-theme] .nav button.on .ic{color:var(--gold)}
 html[data-theme] .card,html[data-theme] .todo,html[data-theme] .lrow{box-shadow:0 1px 2px rgba(20,25,35,.04)}
-/* 清水模：淺色頁首＋細金線，偏建築設計感 */
-html[data-theme=concrete] .top{border-bottom:2px solid var(--gold)}
-html[data-theme=concrete] .brand{color:var(--gold)}
 </style>
 </head>
 <body>
@@ -489,7 +477,7 @@ function pvOverflow() {
 }
 window.addEventListener('resize', () => pvOverflow());
 function itemHTML(i) {
-  if (i.kind === 'cins') return `<div class="todo" data-gocins="${i.caseId}|${i.id}"><div class="ck lg">客</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・客戶指示・${i.status === '已回報' ? '已回報，等你確認完成' + (i.report ? '：' + esc(i.report) : '') : '要執行' + (i.due ? '・期限 ' + esc(md(i.due)) : '')}</div></div>${chip(i.status === '待執行' && i.due && i.due < today() ? '逾期' : i.status, i.status === '待執行' && i.due && i.due < today() ? 'c-bad' : EXEC_CLS[i.status])}</div>`;
+  if (i.kind === 'cins') return `<div class="todo" data-gocins="${i.caseId}|${i.id}"><div class="ck lg">客</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・客戶指示・${i.status === '待調整進度' ? '客戶已確認、影響工期 ' + esc(i.days) + ' 天，請調整進度' : i.status === '已回報' ? '已回報，等你確認完成' + (i.report ? '：' + esc(i.report) : '') : '要執行' + (i.due ? '・期限 ' + esc(md(i.due)) : '')}</div></div>${chip(i.status === '待執行' && i.due && i.due < today() ? '逾期' : i.status, i.status === '待執行' && i.due && i.due < today() ? 'c-bad' : EXEC_CLS[i.status])}</div>`;
   if (i.kind === 'wr') return `<div class="todo" data-gowr="${i.caseId}|${i.id}"><div class="ck lg">修</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・保固報修・${esc(md(i.created))}</div></div>${chip(i.status, REPAIR_CLS[i.status])}</div>`;
   if (i.kind === 'miss') return `<div class="todo" data-miss="${i.caseId}|${i.date}"><div class="ck lg">誌</div>
     <div style="flex:1"><div class="tt">日誌未填：${esc(i.caseName)} ${esc(md(i.date))}（${'日一二三四五六'[new Date(i.date.replace(/\//g, '-')).getDay()]}）</div><div class="s">補寫日誌，或登記當天無施工</div></div>${chip('漏填', 'c-bad')}</div>`;
@@ -638,9 +626,11 @@ function addDays(ymd, n) { const d = new Date(String(ymd).replace(/\//g, '-') + 
 function vProg() {
   const st = S.data.info['階段'];
   S.ptab = S.ptab || (['洽談', '提案', '設計'].includes(st) ? 'ms' : 'plan');
+  const lc = S.linkCi && S.data.cins.find(x => x.id === S.linkCi);
   const d = S.data, sopLeft = d.sop.filter(x => !x.done).length, msLate = d.ms.filter(m => m.status !== '已完成' && m.due && m.due < S.home.today).length;
   const tabs = `<div class="seg ptabs"><button data-pt="plan" class="${S.ptab === 'plan' ? 'on' : ''}">工程進度</button><button data-pt="sop" class="${S.ptab === 'sop' ? 'on' : ''}">開案前 SOP${sopLeft ? `（${sopLeft}）` : ''}</button><button data-pt="ms" class="${S.ptab === 'ms' ? 'on' : ''}">設計里程碑${msLate ? `（逾期 ${msLate}）` : ''}</button></div>`;
   if (S.ptab === 'sop') vSop(tabs); else if (S.ptab === 'ms') vMs(tabs); else vPlan(tabs);
+  if (lc && S.ptab === 'plan') { $('#main').insertAdjacentHTML('afterbegin', `<div class="warnbox" id="lcbar">正在依客戶指示調整進度：${esc(lc.text)}（工期 ${esc(lc.days)} 天）。點要改期的工序，或新增工序；儲存時會自動連結這筆指示。<a id="lcx" style="margin-left:6px;text-decoration:underline;cursor:pointer">取消</a></div>`); $('#lcx').onclick = () => { S.linkCi = null; vProg(); }; }
   $$('[data-pt]').forEach(b => b.onclick = () => { S.ptab = b.dataset.pt; vProg(); });
 }
 function vPlan(tabs) {
@@ -776,6 +766,12 @@ async function planAct(action, payload, msg, ask) {
   try { await API(action, payload); await refreshCase(); closeSheet(); render(); toast(msg); }
   catch (e) { toast(e); } finally { busy(false); }
 }
+/** 追加減連動：客戶已確認、影響工期、還沒處理進度的指示，可在改工序時選「因為哪一筆」 */
+function ciLinkHTML() {
+  const list = (S.data.cins || []).filter(x => x.needSched || x.id === S.linkCi);
+  if (!list.length) return '';
+  return `<label>因為哪一筆客戶指示調整（選填）</label><select id="pci"><option value="">不是因為客戶指示</option>${list.map(x => `<option value="${x.id}" ${x.id === S.linkCi ? 'selected' : ''}>${esc(md(x.date))} ${esc(x.text.slice(0, 24))}（工期 ${esc(x.days)} 天）</option>`).join('')}</select>`;
+}
 function planForm(p) {
   if (guard()) return;
   const locked = !!S.data.planLocked, trades = S.home.trades.map(t => t.name);
@@ -784,12 +780,16 @@ function planForm(p) {
     <label>工序名稱</label><input id="pn" value="${esc(p ? p.name : '')}" placeholder="例如：浴室防水與試水">
     <label>工種</label><select id="ptr"><option value=""></option>${tl.map(t => `<option ${p && p.trade === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
     <div class="dgrid"><div><label>計畫開始</label><input type="date" id="ps" value="${p ? toInput(p.start) : ''}"></div><div><label>計畫完成</label><input type="date" id="pe" value="${p ? toInput(p.end) : ''}"></div></div>
+    ${ciLinkHTML()}
     ${locked ? '<label>原因（改期或新增時必填）</label><textarea id="pwhy" placeholder="例如：客戶追加浴室磁磚，泥作延後三天"></textarea>' : ''}
     <div class="btns"><button class="btn pri" id="pgo">儲存</button></div>`);
+  if ($('#pci')) $('#pci').onchange = () => { const x = S.data.cins.find(c => c.id === $('#pci').value); if (x && $('#pwhy') && !$('#pwhy').value.trim()) $('#pwhy').value = '客戶指示：' + x.text + (x.days ? '（工期 ' + x.days + ' 天）' : ''); };
+  if ($('#pci') && $('#pci').value) $('#pci').onchange();
   $('#pgo').onclick = () => {
     const name = $('#pn').value.trim(); if (!name) return toast('請填寫工序名稱');
     const s = $('#ps').value, e = $('#pe').value; if (s && e && e < s) return toast('完成日不能早於開始日');
-    planAct('savePlanItem', { caseId: S.cur, id: p ? p.id : '', name, trade: $('#ptr').value, start: s, end: e, reason: $('#pwhy') ? $('#pwhy').value.trim() : '' }, p ? '已儲存' : '已新增工序');
+    planAct('savePlanItem', { caseId: S.cur, id: p ? p.id : '', name, trade: $('#ptr').value, start: s, end: e, reason: $('#pwhy') ? $('#pwhy').value.trim() : '', ciId: $('#pci') ? $('#pci').value : '' }, p ? '已儲存' : '已新增工序');
+    S.linkCi = null;
   };
 }
 function startForm(p) {
@@ -1246,22 +1246,29 @@ function newIns(logId) {
 const fmtMoney = v => v === '' || v == null ? '' : (Number(v) < 0 ? '−' : '') + 'NT$ ' + Math.abs(Number(String(v).replace(/[^0-9.\-]/g, '')) || 0).toLocaleString();
 const CI_CLS = { '待確認': 'c-warn', '已確認': 'c-ok', '客戶不同意': 'c-bad' };
 const canCI = x => leader() || S.data.info['負責設計師'] === ME().id || (x && x.by === ME().id);
-const EXEC_CLS = { '待執行': 'c-warn', '已回報': 'c-info', '已完成': 'c-ok', '不需執行': 'c-mute' };
+const EXEC_CLS = { '待執行': 'c-warn', '已回報': 'c-info', '已完成': 'c-ok', '不需執行': 'c-mute', '待調整進度': 'c-warn' };
 const ciLead = () => leader() || S.data.info['負責設計師'] === ME().id;
 /** 客戶指示的執行追蹤（與客戶確認分開：客戶確認≠事情做完） */
+function ciSchedHTML(x, pv) {
+  if (!(x.impact && +x.days)) return '';
+  if (x.sched === '已調整') return `<div class="lst ok">進度：已調整・${esc(x.schedNote)}（${esc(short(pname(x.schedBy)))} ${esc(String(x.schedAt).slice(5, 10))}）</div>`;
+  if (x.sched === '不需調整') return `<div class="lst">進度：不需調整・${esc(x.schedNote)}（${esc(short(pname(x.schedBy)))}）</div>`;
+  if (x.status !== '已確認') return `<div class="lst">進度：客戶確認後再調整（影響工期 ${esc(x.days)} 天）</div>`;
+  return `<div class="lst warn">進度：待調整（影響工期 ${esc(x.days)} 天）</div>${!pv && ciLead() ? `<div class="btns" style="flex-wrap:wrap"><button class="btn pri sm" data-cplan="${x.id}">去調整工序</button><button class="btn ghost sm" data-cnosch="${x.id}">不需調整進度</button></div>` : ''}`;
+}
 function ciExecHTML(x, pv) {
-  if (x.exec === '不需執行') return '<div class="lst">客戶不同意，這項不需執行</div>';
+  if (x.exec === '不需執行') return '<div class="lst">客戶不同意，這項不需執行</div>' + ciSchedHTML(x, pv);
   const late = x.exec === '待執行' && x.due && x.due < today();
   const info = `<div class="lst ${x.exec === '已完成' ? 'ok' : late ? 'bad' : ''}">執行：${esc(x.exec)}・${esc(short(pname(x.owner)) || '未指定')}${x.due ? '・期限 ' + esc(md(x.due)) + (late ? '（逾期）' : '') : ''}${x.report ? '<br>處理回報：' + esc(x.report).replace(/\n/g, '<br>') : ''}${x.doneBy ? '<br>' + esc(short(pname(x.doneBy))) + ' 確認完成・' + esc(String(x.doneAt).slice(5, 16)) : ''}</div>`;
   if (pv) return info;
   const b = [];
   if (x.exec === '待執行' && (x.owner === ME().id || ciLead())) b.push(`<button class="btn pri sm" data-crep="${x.id}">回報處理結果</button>`);
   if (x.exec === '已回報' && ciLead()) b.push(`<button class="btn ok sm" data-cdone="${x.id}">確認完成</button><button class="btn ghost sm" data-cret="${x.id}">退回重做</button>`);
-  return info + (b.length ? `<div class="btns" style="flex-wrap:wrap">${b.join('')}</div>` : '');
+  return info + (b.length ? `<div class="btns" style="flex-wrap:wrap">${b.join('')}</div>` : '') + ciSchedHTML(x, pv);
 }
 function ciAct(x, act) {
   if (guard()) return;
-  const t = { report: ['回報處理結果', '例如：木作已改成到頂 260cm，已拍照', '已回報'], done: ['確認完成', '可補充說明（選填）', '已確認完成'], return: ['退回重做', '請寫退回原因', '已退回'] }[act];
+  const t = { report: ['回報處理結果', '例如：木作已改成到頂 260cm，已拍照', '已回報'], done: ['確認完成', '可補充說明（選填）', '已確認完成'], return: ['退回重做', '請寫退回原因', '已退回'], noSchedule: ['不需調整進度', '例如：利用原本的緩衝天數吸收，完工日不變', '已記錄'] }[act];
   sheet(`<h3>${t[0]}</h3><div class="s">${esc(x.text)}</div>${x.report && act !== 'report' ? `<div class="lst">處理回報：${esc(x.report)}</div>` : ''}<label>${act === 'report' ? '處理結果' : act === 'return' ? '原因' : '說明'}</label><textarea id="cxt" placeholder="${t[1]}"></textarea><div class="btns"><button class="btn pri" id="cxgo">送出</button></div>`);
   $('#cxgo').onclick = () => { const text = $('#cxt').value.trim(); if (act !== 'done' && !text) return toast(act === 'report' ? '請寫處理結果' : '請寫原因'); planAct('actClientIns', { id: x.id, act, text }, t[2]); };
 }
@@ -1324,6 +1331,8 @@ function vClient() {
   $$('[data-crep]').forEach(b => b.onclick = () => ciAct(fx(b.dataset.crep), 'report'));
   $$('[data-cdone]').forEach(b => b.onclick = () => ciAct(fx(b.dataset.cdone), 'done'));
   $$('[data-cret]').forEach(b => b.onclick = () => ciAct(fx(b.dataset.cret), 'return'));
+  $$('[data-cplan]').forEach(b => b.onclick = () => { S.linkCi = b.dataset.cplan; S.tab = 'prog'; S.ptab = 'plan'; render(); toast('點要調整的工序，儲存時已帶入這筆客戶指示'); });
+  $$('[data-cnosch]').forEach(b => b.onclick = () => ciAct(fx(b.dataset.cnosch), 'noSchedule'));
   $$('[data-ph]').forEach(p => p.onclick = () => { const t = S.thumbs[p.dataset.ph]; if (t && t.url) window.open(t.url, '_blank'); });
   ciThumbs();
 }

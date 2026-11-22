@@ -1,5 +1,5 @@
 /**
- * 浩森設計工作管理系統｜後端 v4.7（逐欄合併、簽核與 PDF 分開；v4.6 外部檢查修正、客戶指示執行追蹤、存檔一趟完成；v4.5 系統設定與範本維護、經驗回流；統計、結案唯讀、保固報修；日誌漏填追蹤；文件頁：週報、工程履歷；查驗紀錄、SOP、里程碑；客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
+ * 浩森設計工作管理系統｜後端 v4.8（追加減與進度連動、PDF 依指示更新；v4.7 逐欄合併、簽核與 PDF 分開；v4.6 外部檢查修正、客戶指示執行追蹤、存檔一趟完成；v4.5 系統設定與範本維護、經驗回流；統計、結案唯讀、保固報修；日誌漏填追蹤；文件頁：週報、工程履歷；查驗紀錄、SOP、里程碑；客戶頁；現場總覽與指示追蹤；進度計畫；案件主檔修改；日誌簽核與 PDF；分享／下載分開記錄、唯讀查看 PDF）
  * 資料庫：Google Sheet「浩森設計工作管理系統_資料庫」（與 AppSheet 共用）
  * 所有前端呼叫都走 api(action, payload)，之後改成 PWA 時只需換「身分驗證」這一層。
  * 欄位一律用「表頭名稱」對應，不依賴欄位順序。
@@ -157,10 +157,10 @@ const SCHEMA = {
     '案件': ['案件ID', '案件名稱', '客戶姓名', '客戶電話', '客戶LINE', '地址', '類型', '來源', '負責設計師', '階段', '狀態', '建立日期', '提案日', '設計約簽約日', '工程約簽約日', '預計開工日', '預計完工日', '實際完工日', '結案日', '保固到期日', 'Drive資料夾', '設計費', '工程金額', '備註', '最後修改時間', '最後修改人', '進度定案時間', '進度定案人'],
     '工程日誌': ['日誌ID', '案件ID', '日期', '工種', '今日狀況', '進度百分比', '發現問題', '填寫人', '建立時間', '最後修改時間', '修改次數', '最後修改人', '日誌狀態', '送出時間', '簽核人', '簽核期限', '轉Boss確認', '簽核者', '簽核時間', '簽核內容', '修改待簽', '小修待看', '退回原因', 'PDF檔ID', 'PDF時間', '修訂時間', '分享次數', '最後分享人', '最後分享時間', '下載次數', '最後下載人', '最後下載時間', 'PDF錯誤'],
     '進度計畫': ['工序ID', '案件ID', '順序', '工種', '工序名稱', '原計畫開始', '原計畫完成', '目前計畫開始', '目前計畫完成', '實際開始', '實際完成', '查驗點', '改期原因', '關聯客戶指示ID', '狀態', '實際開始確認人', '實際完成確認人', '範本工序ID', '最後修改人', '最後修改時間'],
-    '進度異動紀錄': ['紀錄ID', '案件ID', '工序ID', '項目', '原值', '新值', '原因', '修改人', '時間'],
+    '進度異動紀錄': ['紀錄ID', '案件ID', '工序ID', '項目', '原值', '新值', '原因', '修改人', '時間', '關聯客戶指示'],
     '範本_工序': ['工序ID', '順序', '工種', '工序名稱', '標準工期（工作天）', '查驗點', '備註', '啟用'],
     '會議': ['會議ID', '案件ID', '日期', '會議名稱', '出席人', '錄音檔', 'AI摘要', '核對人', '核對時間', '記錄人', '建立時間', 'PDF時間'],
-    '客戶指示': ['指示ID', '案件ID', '會議ID', '類型', '來源', '日期', '內容', '影響費用或工期', '追加減金額', '影響工期天數', '確認狀態', '確認方式', '客戶簽名', '確認截圖', '確認時間', '記錄人', '鎖定', '確認備註', '建立時間', '最後修改人', '最後修改時間', '執行人', '執行期限', '執行狀態', '處理回報', '回報時間', '回報人', '完成確認人', '完成時間'],
+    '客戶指示': ['指示ID', '案件ID', '會議ID', '類型', '來源', '日期', '內容', '影響費用或工期', '追加減金額', '影響工期天數', '確認狀態', '確認方式', '客戶簽名', '確認截圖', '確認時間', '記錄人', '鎖定', '確認備註', '建立時間', '最後修改人', '最後修改時間', '執行人', '執行期限', '執行狀態', '處理回報', '回報時間', '回報人', '完成確認人', '完成時間', '進度調整', '進度調整說明', '進度調整人', '進度調整時間'],
     '文件紀錄': ['文件ID', '案件ID', '日期', '文件名稱', '文件類型', '對內對外', '檔案連結', '產生人', '檔案ID', '來源ID', '產生時間'],
     '查驗紀錄': ['紀錄ID', '案件ID', '查驗點', '檢查ID', '檢查項目', '照片', '完成', '狀態', '放行人', '放行時間', '備註', '工序ID', '檢查人', '檢查時間'],
     '範本_查驗清單': ['檢查ID', '查驗點', '順序', '檢查項目', '需拍照', '啟用'],
@@ -373,6 +373,8 @@ function getHome_(me) {
   const designerOf = {}; caseRows.forEach(c => { designerOf[c['案件ID']] = c['負責設計師']; });
   tryTable_('客戶指示').forEach(x => {
     const st = x['執行狀態'] || '';
+    if (x['確認狀態'] === '已確認' && x['影響費用或工期'] === 'Y' && (+x['影響工期天數'] || 0) !== 0 && !x['進度調整'] && designerOf[x['案件ID']] === me.id)
+      items.push({ kind: 'cins', id: x['指示ID'], caseId: x['案件ID'], caseName: cname(x['案件ID']), text: x['內容'], status: '待調整進度', days: x['影響工期天數'], created: x['確認時間'] || x['建立時間'] });
     if (st === '待執行' && x['執行人'] === me.id) items.push({ kind: 'cins', id: x['指示ID'], caseId: x['案件ID'], caseName: cname(x['案件ID']), text: x['內容'], status: '待執行', due: x['執行期限'], created: x['建立時間'] });
     else if (st === '已回報' && (designerOf[x['案件ID']] === me.id || (me.role === 'Boss' && !designerOf[x['案件ID']]))) items.push({ kind: 'cins', id: x['指示ID'], caseId: x['案件ID'], caseName: cname(x['案件ID']), text: x['內容'], status: '已回報', due: x['執行期限'], created: x['回報時間'] || x['建立時間'], report: x['處理回報'] });
   });
@@ -474,7 +476,9 @@ function getCase_(me, p) {
     method: x['確認方式'], sign: x['客戶簽名'], shot: x['確認截圖'], confirmedAt: x['確認時間'], note: x['確認備註'],
     by: x['記錄人'], created: x['建立時間'], locked: x['鎖定'] === 'Y',
     owner: x['執行人'], due: x['執行期限'], exec: x['執行狀態'] || (x['確認狀態'] === '客戶不同意' ? '不需執行' : '待執行'), report: x['處理回報'], reportAt: x['回報時間'],
-    doneBy: x['完成確認人'], doneAt: x['完成時間'], rev: rev_('客戶指示', x), fv: fv_('客戶指示', x)
+    doneBy: x['完成確認人'], doneAt: x['完成時間'], rev: rev_('客戶指示', x),
+    sched: x['進度調整'] || '', schedNote: x['進度調整說明'] || '', schedBy: x['進度調整人'] || '', schedAt: x['進度調整時間'] || '',
+    needSched: x['確認狀態'] === '已確認' && x['影響費用或工期'] === 'Y' && (+x['影響工期天數'] || 0) !== 0 && !x['進度調整'], fv: fv_('客戶指示', x)
   })).sort((a, b) => ((b.date || '') + b.created).localeCompare((a.date || '') + a.created));
   const checks = tryTable_('查驗紀錄').filter(x => x['案件ID'] === p.id).map(x => ({
     id: x['紀錄ID'], item: x['工序ID'], point: x['查驗點'], checkId: x['檢查ID'], label: x['檢查項目'], photo: x['照片'], done: x['完成'] === 'Y',
@@ -1127,8 +1131,8 @@ function planGuard_(me, caseId) {
   return c;
 }
 function planItem_(id) { return rowObj_(findRow_('進度計畫', '工序ID', id)); }
-function planLog_(me, caseId, itemId, what, from, to, why) {
-  appendRow_('進度異動紀錄', { '紀錄ID': uid_(), '案件ID': caseId, '工序ID': itemId || '', '項目': what, '原值': from || '', '新值': to || '', '原因': why || '', '修改人': me.id, '時間': now_() });
+function planLog_(me, caseId, itemId, what, from, to, why, ciId) {
+  appendRow_('進度異動紀錄', { '紀錄ID': uid_(), '案件ID': caseId, '工序ID': itemId || '', '項目': what, '原值': from || '', '新值': to || '', '原因': why || '', '修改人': me.id, '時間': now_(), '關聯客戶指示': ciId || '' });
 }
 function checkRange_(s, e) {
   if (s && !/^\d{4}\/\d{2}\/\d{2}$/.test(s) || e && !/^\d{4}\/\d{2}\/\d{2}$/.test(e)) throw new Error('日期格式不對');
@@ -1151,12 +1155,17 @@ function savePlanItem_(me, d) {
   const start = ymd_(d.start), end = ymd_(d.end), why = String(d.reason || '').trim();
   checkRange_(start, end);
   if (!String(d.name || '').trim()) throw new Error('請填寫工序名稱');
+  // 追加減連動：這次改期／新增是因為哪一筆客戶指示（選填）
+  let ci = null;
+  if (d.ciId) { ci = rowObj_(findRow_('客戶指示', '指示ID', d.ciId)); if (ci['案件ID'] !== d.caseId) throw new Error('客戶指示不屬於這個案件'); }
+  const linkCi = itemName => { if (ci) updateRow_('客戶指示', '指示ID', d.ciId, { '進度調整': '已調整', '進度調整說明': itemName + '：' + start + '～' + end, '進度調整人': me.id, '進度調整時間': now_() }); };
   if (!d.id) {
     if (locked && !why) throw new Error('進度已定案，新增工序請填寫原因');
     const id = uid_(), maxOrder = readTable_('進度計畫').filter(r => r['案件ID'] === d.caseId).reduce((m, r) => Math.max(m, +r['順序'] || 0), 0);
     appendRow_('進度計畫', { '工序ID': id, '案件ID': d.caseId, '順序': d.order || maxOrder + 1, '工種': d.trade || '', '工序名稱': String(d.name).trim(),
       '目前計畫開始': start, '目前計畫完成': end, '狀態': '計畫', '最後修改人': me.id, '最後修改時間': now_() });
-    if (locked) planLog_(me, d.caseId, id, '新增工序', '', String(d.name).trim() + ' ' + start + '～' + end, why);
+    if (locked) planLog_(me, d.caseId, id, '新增工序', '', String(d.name).trim() + ' ' + start + '～' + end, why, d.ciId);
+    linkCi('新增 ' + String(d.name).trim());
     return id;
   }
   const r = planItem_(d.id);
@@ -1165,7 +1174,8 @@ function savePlanItem_(me, d) {
   if (d.order) patch['順序'] = d.order;
   const dateChanged = start !== (r['目前計畫開始'] || '') || end !== (r['目前計畫完成'] || '');
   if (locked && dateChanged && !why) throw new Error('進度已定案，改期請填寫原因');
-  if (locked && dateChanged) planLog_(me, d.caseId, d.id, '改期', (r['目前計畫開始'] || '') + '～' + (r['目前計畫完成'] || ''), start + '～' + end, why);
+  if (locked && dateChanged) planLog_(me, d.caseId, d.id, '改期', (r['目前計畫開始'] || '') + '～' + (r['目前計畫完成'] || ''), start + '～' + end, why, d.ciId);
+  if (dateChanged) linkCi(patch['工序名稱']);
   if (locked && patch['工序名稱'] !== r['工序名稱']) planLog_(me, d.caseId, d.id, '改名稱', r['工序名稱'], patch['工序名稱'], why);
   patch['改期原因'] = locked && dateChanged ? why : (r['改期原因'] || '');
   patch['最後修改人'] = me.id; patch['最後修改時間'] = now_();
@@ -1361,6 +1371,10 @@ function actClientIns_(me, d) {
   } else if (d.act === 'done') {
     if (!lead) throw new Error('只有負責設計師或主管可以確認完成');
     updateRow_('客戶指示', '指示ID', d.id, { '執行狀態': '已完成', '處理回報': text || x['處理回報'], '完成確認人': me.id, '完成時間': now_(), '最後修改人': me.id, '最後修改時間': now_() });
+  } else if (d.act === 'noSchedule') {
+    if (!lead) throw new Error('只有負責設計師或主管可以決定');
+    if (!text) throw new Error('請寫為什麼不需要調整進度，例如：利用原本的緩衝天數吸收');
+    updateRow_('客戶指示', '指示ID', d.id, { '進度調整': '不需調整', '進度調整說明': text, '進度調整人': me.id, '進度調整時間': now_() });
   } else if (d.act === 'return') {
     if (!lead) throw new Error('只有負責設計師或主管可以退回');
     if (!text) throw new Error('退回請寫原因');
