@@ -4,7 +4,7 @@
   try { const k = '__t'; localStorage.setItem(k, 1); localStorage.removeItem(k); } catch (e) {
     const m = {}; try { Object.defineProperty(window, 'localStorage', { configurable: true, value: { getItem: k => k in m ? m[k] : null, setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; }, clear: () => { for (const k in m) delete m[k]; } } }); } catch (e2) { }
   }
-  const DB_KEY = 'housen_demo_db_v5', USER_KEY = 'housen_demo_user';
+  const DB_KEY = 'housen_demo_db_v6', USER_KEY = 'housen_demo_user';
   const PEOPLE = [['boss@demo', '林柏元', 'Boss：看全部、下指示、簽核蘋芳的日誌、改設定'], ['pf@demo', '施蘋芳', '主管：簽核凱翔的日誌、排進度'],
     ['kx@demo', '許凱翔', '設計助理：寫日誌、回報指示'], ['rita@demo', '林妙娟', '行政財務：看金額、統計、報修'], ['candy@demo', '施明媛', '行政助理']];
   const mem = {};
@@ -64,7 +64,13 @@
   }
   window.__demoPdfB64 = realPdfB64;
   // 下載：試玩版的頁面不允許直接下載，改用平台的「下載」功能（會先跳出確認）
+  const SANDBOX = !!(window.claude && window.claude.use);
   async function saveFile(name, blob) {
+    if (!SANDBOX) {   // 一般瀏覽器：手機可以分享（LINE 等），不行就直接下載
+      const file = new File([blob], name, { type: 'application/pdf' });
+      try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); HTMLAnchorElement.prototype.click.call(a); setTimeout(() => a.remove(), 1000); return;
+    }
     try {
       const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
       if (!dl) return note('這個瀏覽器的試玩版不允許下載檔案；正式版可以直接下載。');
@@ -140,7 +146,7 @@
       if (f.html) {
         const wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-direction:column;height:100%';
         const bar = document.createElement('div'); bar.className = 'dv-dl';
-        bar.innerHTML = '<button id="dvdl">下載這份 PDF</button><span>試玩版在手機上轉成 PDF，正式版由 Google 產生</span>';
+        bar.innerHTML = '<button id="dvdl">' + (SANDBOX ? '下載這份 PDF' : '分享／下載這份 PDF') + '</button><span>測試版在手機上轉成 PDF，正式版由 Google 產生</span>';
         const fr = document.createElement('iframe'); fr.className = 'dv-frame'; fr.srcdoc = f.html; fr.style.flex = '1';
         wrap.appendChild(bar); wrap.appendChild(fr); viewer(wrap);
         document.getElementById('dvdl').onclick = async function () {
@@ -165,7 +171,7 @@
   const fixLinks = root => (root.querySelectorAll ? root.querySelectorAll('a[href]') : []).forEach(a => {
     const h = a.getAttribute('href') || '';
     if (/^https:\/\/demo\.(file|folder)\//.test(h)) { a.dataset.demoHref = h; a.removeAttribute('href'); a.removeAttribute('target'); a.style.cursor = 'pointer'; }
-    else if (a.hasAttribute('download') && /^(blob|data):/.test(h)) { a.dataset.demoDl = h; a.dataset.demoName = a.getAttribute('download') || 'file.pdf'; a.removeAttribute('href'); a.removeAttribute('download'); a.style.cursor = 'pointer'; }
+    else if (SANDBOX && a.hasAttribute('download') && /^(blob|data):/.test(h)) { a.dataset.demoDl = h; a.dataset.demoName = a.getAttribute('download') || 'file.pdf'; a.removeAttribute('href'); a.removeAttribute('download'); a.style.cursor = 'pointer'; }
   });
   new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) { fixLinks(n); if (n.matches && n.matches('a')) fixLinks(n.parentNode || n); } }))).observe(document.documentElement, { childList: true, subtree: true });
   document.addEventListener('click', async e => {
