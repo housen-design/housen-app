@@ -4,7 +4,7 @@
   try { const k = '__t'; localStorage.setItem(k, 1); localStorage.removeItem(k); } catch (e) {
     const m = {}; try { Object.defineProperty(window, 'localStorage', { configurable: true, value: { getItem: k => k in m ? m[k] : null, setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; }, clear: () => { for (const k in m) delete m[k]; } } }); } catch (e2) { }
   }
-  const DB_KEY = 'housen_demo_db_v4', USER_KEY = 'housen_demo_user';
+  const DB_KEY = 'housen_demo_db_v5', USER_KEY = 'housen_demo_user';
   const PEOPLE = [['boss@demo', '林柏元', 'Boss：看全部、下指示、簽核蘋芳的日誌、改設定'], ['pf@demo', '施蘋芳', '主管：簽核凱翔的日誌、排進度'],
     ['kx@demo', '許凱翔', '設計助理：寫日誌、回報指示'], ['rita@demo', '林妙娟', '行政財務：看金額、統計、報修'], ['candy@demo', '施明媛', '行政助理']];
   const mem = {};
@@ -112,10 +112,8 @@
     let b = document.getElementById('demoBar');
     if (!b) { b = document.createElement('div'); b.id = 'demoBar'; document.body.insertBefore(b, document.body.firstChild); }
     const me = PEOPLE.find(x => x[0] === user());
-    let cur = 'graphite'; try { cur = localStorage.getItem('housen_theme') || 'graphite'; } catch (e) { }
-    b.innerHTML = `試玩・假資料｜<b>${me ? me[1] : '—'}</b> <a id="demoSwitch">切換身分</a>｜配色 <select id="demoTheme">${Object.keys(window.THEMES || {}).map(k => `<option value="${k}" ${k === cur ? 'selected' : ''}>${THEMES[k][0]}</option>`).join('')}</select>`;
+    b.innerHTML = `試玩・假資料｜<b>${me ? me[1] : '—'}</b> <a id="demoSwitch">切換身分</a>`;
     document.getElementById('demoSwitch').onclick = () => { pick(); };
-    document.getElementById('demoTheme').onchange = e => { setTheme(e.target.value); };
   }
   function restart() { try { S.as = ''; S.real = null; S.thumbs = {}; S.cur = null; S.insFilter = 'open'; S.copen = {}; S.popen = {}; S.ptab = null; S.open = {}; S.tab = 'sum'; S.pdfJobs = {}; S.home = null; S.data = null; $('#top').style.display = ''; $('#main').style.padding = ''; boot(); } catch (e) { location.reload(); } }
   // 登出 → 回到選身分
