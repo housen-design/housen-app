@@ -182,6 +182,8 @@ body.syncing::after{content:'更新中…';position:fixed;top:calc(8px + env(saf
 .pdfst{font-size:12.5px;font-weight:600}.pdfst.ok{color:var(--ok)}.pdfst.run{color:var(--info,#3b6ea8)}.pdfst.warn{color:var(--warn)}.pdfst.bad{color:var(--bad)}
 .pdfst.run::before{content:'';display:inline-block;width:10px;height:10px;margin-right:5px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-1px}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes flashbg{0%{box-shadow:0 0 0 3px var(--gold)}100%{box-shadow:0 0 0 3px transparent}}
+.flash{animation:flashbg 2.2s ease-out;border-radius:12px}
 .sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 6px;margin-top:10px}.sgrid div{background:var(--app2);border-radius:9px;padding:7px 8px;min-width:0}.sgrid span{display:block;font-size:11px;color:var(--muted)}.sgrid b{font-size:15px;font-weight:600}
 .spad{width:100%;height:170px;border:1.5px dashed var(--line);border-radius:12px;background:var(--card);touch-action:none;display:block}
 .plist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
@@ -340,6 +342,15 @@ const PUBLIC_HINT = '此內容會出現在給客戶的工程日誌 PDF。請用�
 const chip = (t, cls) => `<span class="chip ${cls || 'c-mute'}">${esc(t)}</span>`;
 const COLORS = ['#9A9086', '#8A6A4B', '#5B6F8C', '#4F8A8B', '#B9773A', '#6E8FA6', '#A0794F', '#6D6359', '#4F7A5C', '#A88BA0', '#C9A227', '#B0483C'];
 
+/** 依目標那一筆調整篩選與展開，確保一定看得到 */
+function prepFocus(f) {
+  const d = S.data; if (!d) return;
+  if (f.kind === 'ins') { const x = d.ins.find(i => i.id === f.id); S.insFilter = x && x.status === '已結案' ? 'done' : 'open'; }
+  if (f.kind === 'cins') { const x = d.cins.find(i => i.id === f.id); S.copen = S.copen || {}; S.copen[f.id] = true; if (x && x.meetingId) S.copen[x.meetingId] = true; }
+  if (f.kind === 'ms') S.ptab = 'ms';
+  if (f.kind === 'plan') { S.ptab = 'plan'; S.popen = S.popen || {}; S.popen[f.id] = true; }
+}
+function flash(el) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
 /* ===== 本機快取：打開時先顯示手機上次記住的內容，背景再換成最新的 ===== */
 const CACHE_KEY = 'housen_cache_v1';
 function cacheGet() { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); return c && c.tok === tokTail() ? c : null; } catch (e) { return null; } }
@@ -478,13 +489,13 @@ function pvOverflow() {
 }
 window.addEventListener('resize', () => pvOverflow());
 function itemHTML(i) {
-  if (i.kind === 'cins') return `<div class="todo" data-gocins="${i.caseId}"><div class="ck lg">客</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・客戶指示・${i.status === '已回報' ? '已回報，等你確認完成' + (i.report ? '：' + esc(i.report) : '') : '要執行' + (i.due ? '・期限 ' + esc(md(i.due)) : '')}</div></div>${chip(i.status === '待執行' && i.due && i.due < today() ? '逾期' : i.status, i.status === '待執行' && i.due && i.due < today() ? 'c-bad' : EXEC_CLS[i.status])}</div>`;
-  if (i.kind === 'wr') return `<div class="todo" data-gowr="${i.caseId}"><div class="ck lg">修</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・保固報修・${esc(md(i.created))}</div></div>${chip(i.status, REPAIR_CLS[i.status])}</div>`;
+  if (i.kind === 'cins') return `<div class="todo" data-gocins="${i.caseId}|${i.id}"><div class="ck lg">客</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・客戶指示・${i.status === '已回報' ? '已回報，等你確認完成' + (i.report ? '：' + esc(i.report) : '') : '要執行' + (i.due ? '・期限 ' + esc(md(i.due)) : '')}</div></div>${chip(i.status === '待執行' && i.due && i.due < today() ? '逾期' : i.status, i.status === '待執行' && i.due && i.due < today() ? 'c-bad' : EXEC_CLS[i.status])}</div>`;
+  if (i.kind === 'wr') return `<div class="todo" data-gowr="${i.caseId}|${i.id}"><div class="ck lg">修</div><div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${esc(i.caseName)}・保固報修・${esc(md(i.created))}</div></div>${chip(i.status, REPAIR_CLS[i.status])}</div>`;
   if (i.kind === 'miss') return `<div class="todo" data-miss="${i.caseId}|${i.date}"><div class="ck lg">誌</div>
     <div style="flex:1"><div class="tt">日誌未填：${esc(i.caseName)} ${esc(md(i.date))}（${'日一二三四五六'[new Date(i.date.replace(/\//g, '-')).getDay()]}）</div><div class="s">補寫日誌，或登記當天無施工</div></div>${chip('漏填', 'c-bad')}</div>`;
   if (i.kind === 'ms' || i.kind === 'plan') {
     const late = i.kind === 'plan' || (i.due && days(i.due, S.home.today) < 0);
-    return `<div class="todo" data-goprog="${i.caseId}|${i.kind}"><div class="ck lg">${i.kind === 'ms' ? '程' : '工'}</div>
+    return `<div class="todo" data-goprog="${i.caseId}|${i.kind}|${i.id}"><div class="ck lg">${i.kind === 'ms' ? '程' : '工'}</div>
       <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[esc(i.caseName), i.kind === 'ms' ? '設計里程碑・' + dueTxt(i.due) : esc(i.status) + '（' + esc(md(i.due)) + '）'].join('・')}</div></div>${chip(i.kind === 'ms' ? (late ? '逾期' : '里程碑') : '進度落後', late ? 'c-bad' : 'c-info')}</div>`;
   }
   if (i.kind === 'log') {
@@ -501,7 +512,7 @@ function itemHTML(i) {
       <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[i.caseName ? esc(i.caseName) : '', dueTxt(i.due, i.done), i.from && i.from !== ME().id ? esc(short(pname(i.from))) + ' 交辦' : ''].filter(String).join('・')}</div></div></div>`;
   }
   const waitMe = i.status === '已回報' && !i.mine, stale = i.staleDays >= ((S.home.rule && S.home.rule.stale) || 3);
-  return `<div class="todo" data-goins="${i.caseId}"><div class="ck ins">指</div>
+  return `<div class="todo" data-goins="${i.caseId}|${i.id}"><div class="ck ins">指</div>
     <div style="flex:1"><div class="tt">${isNew(i) ? '<span class="newdot"></span>' : ''}${esc(i.text)}</div><div class="s">${[esc(i.caseName), waitMe ? esc(short(pname(i.to))) + ' 已回報，等你確認' : (i.status === '已回報' ? '已回報，等主管確認' : stale ? `<span class="bad">已 ${i.staleDays} 天未回報</span>` : dueTxt(i.due)), !waitMe ? esc(short(pname(i.from))) + ' 指示' : ''].filter(String).join('・')}</div></div>${chip(waitMe ? '待你確認' : i.status, INS_CLS[i.status])}</div>`;
 }
 function missSheet(caseId, date) {
@@ -526,12 +537,13 @@ function bindItems() {
     try { await API('setTodo', { id: e.dataset.todo, done }); if (S.cur) { await refreshCase(); render(); } else { await reloadHome(); renderHome(); } toast(done ? '完成 ✓' : '已改回未完成'); }
     catch (x) { toast(x); }
   });
-  $$('[data-goins]').forEach(e => e.onclick = () => openCase(e.dataset.goins, 'instr'));
+  // 從待辦點進去：直接切到那一筆所在的分頁、篩選、展開，並捲到那一筆（不受上次停留的篩選影響）
+  $$('[data-goins]').forEach(e => e.onclick = () => { const [c, id] = e.dataset.goins.split('|'); openCase(c, 'instr', null, { kind: 'ins', id }); });
   $$('[data-golog]').forEach(e => e.onclick = () => { const [c, l] = e.dataset.golog.split('|'); openCase(c, 'log', l); });
-  $$('[data-gowr]').forEach(e => e.onclick = () => openCase(e.dataset.gowr, 'sum'));
-  $$('[data-gocins]').forEach(e => e.onclick = () => openCase(e.dataset.gocins, 'client'));
+  $$('[data-gowr]').forEach(e => e.onclick = () => { const [c, id] = e.dataset.gowr.split('|'); openCase(c, 'sum', null, { kind: 'wr', id }); });
+  $$('[data-gocins]').forEach(e => e.onclick = () => { const [c, id] = e.dataset.gocins.split('|'); openCase(c, 'client', null, { kind: 'cins', id }); });
   $$('[data-miss]').forEach(e => e.onclick = () => { if (preview()) return; const [c, dd] = e.dataset.miss.split('|'); missSheet(c, dd); });
-  $$('[data-goprog]').forEach(e => e.onclick = () => { const [c, k] = e.dataset.goprog.split('|'); S.ptab = k === 'ms' ? 'ms' : 'plan'; openCase(c, 'prog'); });
+  $$('[data-goprog]').forEach(e => e.onclick = () => { const [c, k, id] = e.dataset.goprog.split('|'); openCase(c, 'prog', null, { kind: k, id }); });
 }
 
 function newTodo(caseId) {
@@ -555,13 +567,16 @@ function newTodo(caseId) {
   };
 }
 
-async function openCase(id, tab, logId) {
+async function openCase(id, tab, logId, focus) {
   const nav = ++S.nav;   // 每次切換案件給一個序號；晚回來的舊請求序號不同，就只存起來、不碰畫面
   const show = () => {
     if (nav !== S.nav) return;
     S.cur = id; S.tab = tab || S.tab || 'sum'; S.open = logId ? { [logId]: true } : (S.open || {});
+    if (focus) prepFocus(focus);
     const c = S.home && S.home.cases.find(x => x.id === id); if (c) markAct(id, c.act);
-    render(); if (logId) setTimeout(() => { const r = document.querySelector(`[data-lid="${logId}"]`); if (r) r.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 60);
+    render();
+    if (logId) setTimeout(() => { const r = document.querySelector(`[data-lid="${logId}"]`); if (r) { r.scrollIntoView({ block: 'start', behavior: 'smooth' }); flash(r); } }, 60);
+    if (focus) setTimeout(() => { const r = document.querySelector(`[data-fid="${focus.id}"]`); if (r) { r.scrollIntoView({ block: 'center', behavior: 'smooth' }); flash(r); } }, 60);
   };
   const cached = !S.as && cacheGet(), hit = cached && cached.cases[id];
   S.tab = tab || 'sum'; S.open = logId ? { [logId]: true } : {};
@@ -646,7 +661,7 @@ function vPlan(tabs) {
     const recs = d.checks.filter(x => x.item === p.id);
     const chkRows = tpl.map(t => ({ t, r: recs.find(x => x.checkId === t.id) }));
     const chkDone = chkRows.filter(x => x.r && x.r.done).length, chkBad = recs.filter(x => x.status === '有問題').length;
-    return `<div class="prow ${S.popen[p.id] ? 'open' : ''}" data-pid="${p.id}">
+    return `<div class="prow ${S.popen[p.id] ? 'open' : ''}" data-pid="${p.id}" data-fid="${p.id}">
       <div class="phead"><span class="pno">${i + 1}</span><div class="pmain"><div class="pt">${p.trade ? `<span class="tchip" style="background:${tcolor(p.trade)}">${esc(p.trade)}</span> ` : ''}${esc(p.name)}</div>
         <div class="ps">計畫 ${range(p.start, p.end)}${moved ? `<span class="pold">原 ${range(p.baseStart, p.baseEnd)}</span>` : ''}</div>
         <div class="ps">實際 ${p.actStart ? ymdShort(p.actStart) + ' 開始' : '—'}${p.actEnd ? '・' + ymdShort(p.actEnd) + ' 完成' : ''}</div>
@@ -723,7 +738,7 @@ function vMs(tabs) {
     const g = d.ms.filter(m => stg ? m.stage === stg : !['提案', '設計'].includes(m.stage)); if (!g.length) return;
     h += `<div class="month">${stg || '其他'}・${g.filter(m => m.status === '已完成').length}/${g.length}</div><div class="tl">` + g.map(m => {
       const late = m.status !== '已完成' && m.due && m.due < S.home.today;
-      return `<div class="todo"><div class="ck ${m.status === '已完成' ? 'on' : ''}" ${!ro() && (m.owner === me || can) ? `data-msd="${m.id}"` : ''}>${m.status === '已完成' ? '✓' : ''}</div>
+      return `<div class="todo" data-fid="${m.id}"><div class="ck ${m.status === '已完成' ? 'on' : ''}" ${!ro() && (m.owner === me || can) ? `data-msd="${m.id}"` : ''}>${m.status === '已完成' ? '✓' : ''}</div>
         <div style="flex:1;min-width:0" ${can ? `data-mse="${m.id}"` : ''}><div class="tt">${esc(m.name)}</div>
         <div class="s">${[esc(short(pname(m.owner)) || '未指定'), m.status === '已完成' ? esc(md(m.done)) + ' 完成' : (late ? `<span class="bad">期限 ${esc(md(m.due))}（逾期）</span>` : '期限 ' + esc(md(m.due))), m.base && m.base !== m.due ? '原定 ' + esc(md(m.base)) : '', m.returns ? `退回 ${m.returns} 次` : ''].filter(String).join('・')}</div></div>
         ${leader() && !ro() && m.status === '已完成' ? `<button class="btn ghost sm" data-msr="${m.id}">退回</button>` : ''}</div>`;
@@ -808,7 +823,7 @@ const REPAIR_CLS = { '待處理': 'c-warn', '處理中': 'c-info', '已完成': 
 function repairHTML() {
   const r = S.data.repairs, c = S.data.info;
   return `<h2>保固報修<small>${c['保固到期日'] ? '保固到 ' + esc(c['保固到期日']) : ''}</small>${!preview() ? '<span class="act" id="addRepair">＋ 報修</span>' : ''}</h2>
-    <div class="tl">${r.length ? r.map(x => `<div class="todo" ${!preview() ? `data-rep="${x.id}"` : ''}><div class="ck lg">修</div><div style="flex:1;min-width:0"><div class="tt">${esc(x.text)}</div>
+    <div class="tl">${r.length ? r.map(x => `<div class="todo" data-fid="${x.id}" ${!preview() ? `data-rep="${x.id}"` : ''}><div class="ck lg">修</div><div style="flex:1;min-width:0"><div class="tt">${esc(x.text)}</div>
       <div class="s">${[esc(md(x.date)) + ' 報修', '負責 ' + esc(short(pname(x.owner)) || '未指定'), x.result ? '處理：' + esc(x.result) : '', x.done ? esc(md(x.done)) + ' 完成' : ''].filter(String).join('・')}</div></div>${chip(x.status, REPAIR_CLS[x.status])}</div>`).join('') : '<div class="empty">沒有報修紀錄</div>'}</div>`;
 }
 function bindRepairs() {
@@ -1178,7 +1193,7 @@ function insHTML(i) {
     if (i.status === '已回報' && (i.from === me || S.real.role === 'Boss' && !S.as)) act = `<button class="btn ok sm" data-close="${i.id}">確認結案</button><button class="btn ghost sm" data-ret="${i.id}">退回</button>`;
   }
   if (!preview() && i.status === '已結案') act += `<button class="btn ghost sm" data-sugg="${i.id}">建議納入範本</button>`;
-  return `<div class="instr"><div class="row2"><div style="flex:1">${esc(i.text)}</div>${chip(i.status, INS_CLS[i.status])}</div>
+  return `<div class="instr" data-fid="${i.id}"><div class="row2"><div style="flex:1">${esc(i.text)}</div>${chip(i.status, INS_CLS[i.status])}</div>
     <div class="who">${esc(pname(i.from))} → ${esc(pname(i.to) || '未指定')}${i.due ? '・' + dueTxt(i.due, i.status === '已結案') : ''}${i.returns ? '・退回 ' + i.returns + ' 次' : ''}</div>
     ${i.reply ? `<div class="reply">${esc(i.reply)}</div>` : ''}${act ? `<div class="btns">${act}</div>` : ''}</div>`;
 }
@@ -1251,7 +1266,7 @@ function ciAct(x, act) {
 }
 function ciHTML(x) {
   const pv = ro();
-  return `<div class="prow ${S.copen && S.copen[x.id] ? 'open' : ''}" data-cid="${x.id}">
+  return `<div class="prow ${S.copen && S.copen[x.id] ? 'open' : ''}" data-cid="${x.id}" data-fid="${x.id}">
     <div class="phead"><div class="pmain"><div class="pt">${esc(x.text)}</div>
       <div class="ps">${esc(md(x.date))}・${esc(x.source)}・${esc(short(pname(x.by)))} 記錄</div>
       ${x.impact ? `<div class="ps pchk">影響費用或工期${x.amount ? '・追加減 ' + fmtMoney(x.amount) : ''}${x.days ? '・工期 ' + esc(x.days) + ' 天' : ''}</div>` : ''}</div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${chip(x.status, CI_CLS[x.status])}${x.exec !== '不需執行' ? chip(x.exec, EXEC_CLS[x.exec]) : ''}</div></div>
@@ -1280,7 +1295,7 @@ function vClient() {
   h += `<h2>會議記錄<small>${d.meetings.length} 場</small>${!pv ? '<span class="act" id="addMeet">＋ 新增會議</span>' : ''}</h2>`;
   h += d.meetings.length ? `<div class="plist">` + d.meetings.map(m => {
     const items = d.cins.filter(x => x.meetingId === m.id);
-    return `<div class="prow ${S.copen[m.id] ? 'open' : ''}" data-cid="${m.id}">
+    return `<div class="prow ${S.copen[m.id] ? 'open' : ''}" data-cid="${m.id}" data-fid="${m.id}">
       <div class="phead"><div class="pmain"><div class="pt">${esc(m.name)}</div><div class="ps">${esc(md(m.date))}${m.attendees ? '・' + esc(m.attendees) : ''}・${items.length} 項決議</div></div>${chip(m.reviewedBy ? '已核對' : m.summary ? '待核對' : '未整理', m.reviewedBy ? 'c-ok' : 'c-warn')}</div>
       <div class="pbody">
         ${m.audio ? `<div class="s"><a href="${esc(m.audio)}" target="_blank" rel="noopener">開啟錄音檔</a></div>` : ''}
