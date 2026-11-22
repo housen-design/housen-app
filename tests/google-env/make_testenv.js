@@ -3,12 +3,27 @@ const fs = require('fs');
 const [,, codePath, seedPath, outDir] = process.argv;
 const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
 const T = seed.T, files = seed.files;
-// 1) 後端：同一份程式，只把試算表改成「測試環境」那一份
+// 1) 後端：同一份程式，改成透過「隔離層」存取（只能碰測試試算表與測試資料夾）
 let code = fs.readFileSync(codePath, 'utf8');
-const a = "const SS_ID = '1Trazrz1jfOxTaPFA43hb9YFubU5uSaGUZAnD4sWXrCw';";
-if (!code.includes(a)) throw new Error('SS_ID line not found');
-code = code.replace(a, "const SS_ID = PropertiesService.getScriptProperties().getProperty('TEST_SS_ID') || 'TEST_NOT_SET';   // ★ 測試環境：只連測試試算表");
+const rep = (from, to, n) => { const c = code.split(from).length - 1; if (c !== n) throw new Error('預期 ' + n + ' 處，實際 ' + c + '：' + from); code = code.split(from).join(to); };
+rep("const SS_ID = '1Trazrz1jfOxTaPFA43hb9YFubU5uSaGUZAnD4sWXrCw';", "const SS_ID = PropertiesService.getScriptProperties().getProperty('TEST_SS_ID') || 'TEST_NOT_SET';   // ★ 測試環境：只連測試試算表", 1);
+rep('SpreadsheetApp.openById(SS_ID)', 'TSheets.openById(SS_ID)', 1);
+rep('DriveApp.getFileById(SS_ID).getParents().next()', 'testRoot_()', 2);
+// 案件資料夾：網址一定要在測試根資料夾底下，否則拒絕（不默默改用預設資料夾）
+rep("  if (m) { try { return DriveApp.getFolderById(m[1]); } catch (e) { } }", "  if (m) return TDrive.getFolderById(m[1]);   // ★ 測試環境：不在測試資料夾底下就拒絕", 1);
+rep("    try { patch['Drive資料夾'] = DriveApp.getFolderById(m[1]).getUrl(); }\n    catch (e) { throw new Error('打不開這個資料夾：請確認網址正確，且 Boss 的帳號有權限'); }",
+    "    if (!TDrive.inRoot(m[1])) throw new Error('測試環境只能使用測試資料夾，這個資料夾不接受');\n    patch['Drive資料夾'] = TDrive.getFolderById(m[1]).getUrl();", 1);
+rep('DriveApp.', 'TDrive.', 4);
+if (/SpreadsheetApp|DriveApp/.test(code)) throw new Error('還有沒換掉的 SpreadsheetApp／DriveApp');
+if (code.includes('1Trazrz1jfOxTaPFA43hb9YFubU5uSaGUZAnD4sWXrCw')) throw new Error('程式裡還有正式試算表 ID');
 fs.writeFileSync(outDir + '/TestCode.gs', code);
+fs.writeFileSync(outDir + '/TestShim.gs', fs.readFileSync(__dirname + '/TestShim.template.gs', 'utf8'));
+fs.writeFileSync(outDir + '/appsscript.json', JSON.stringify({
+  timeZone: 'Asia/Taipei', runtimeVersion: 'V8', exceptionLogging: 'STACKDRIVER',
+  dependencies: { enabledAdvancedServices: [{ userSymbol: 'Drive', serviceId: 'drive', version: 'v3' }, { userSymbol: 'Sheets', serviceId: 'sheets', version: 'v4' }] },
+  oauthScopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/script.external_request', 'https://www.googleapis.com/auth/userinfo.email'],
+  webapp: { executeAs: 'USER_DEPLOYING', access: 'ANYONE_ANONYMOUS' }
+}, null, 2));
 // 2) 假資料：Boss 的信箱在建立時換成「執行的人」的帳號（才能登入）；其他人維持假信箱
 const P = T['人員'], pe = P[0].indexOf('Email');
 P.slice(1).forEach(r => { if (r[0] === 'P01') r[pe] = '__OWNER__'; else r[pe] = r[pe].replace('@demo', '@test.invalid'); });
@@ -24,4 +39,4 @@ const imgs = Object.keys(files).filter(k => !files[k].html && /^image\//.test(fi
 const data = JSON.stringify({ T, imgs });
 const env = fs.readFileSync(__dirname + '/TestEnv.template.gs', 'utf8').replace('/*__TEST_DATA__*/null', data);
 fs.writeFileSync(outDir + '/TestEnv.gs', env);
-console.log('TestCode.gs', code.length, 'TestEnv.gs', env.length, 'images', imgs.length, imgs.map(x => x.dir).filter((v, i, a) => a.indexOf(v) === i));
+console.log('TestCode.gs', code.length, 'TestShim.gs ok', 'TestEnv.gs', env.length, 'images', imgs.length, imgs.map(x => x.dir).filter((v, i, a) => a.indexOf(v) === i));

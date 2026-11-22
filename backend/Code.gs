@@ -106,7 +106,7 @@ function run_(email, action, payload) {
     actClientIns: actClientIns_
   };
   if (READ[action]) return READ[action](me, payload);
-  if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); target_(action, payload); return SLOW[action](me, payload); }
+  if (SLOW[action]) { if (me.preview) throw new Error('預覽模式只能看'); const scid = target_(action, payload); if (scid && !caseRow_(scid)) throw new Error('找不到案件，已拒絕這次動作'); return SLOW[action](me, payload); }
   if (WRITE[action]) {
     if (me.preview) throw new Error('預覽模式只能看，不能存檔');
     const lock = LockService.getScriptLock();
@@ -990,9 +990,11 @@ function target_(action, d) {
   return ids[0] || '';
 }
 function closedGuard_(action, cid) {
-  if (CLOSED_OK.indexOf(action) >= 0 || !cid) return;
+  if (!cid) return;
   const c = caseRow_(cid);
-  if (c && c['階段'] === '結案') throw new Error('案件已結案，資料唯讀；如需修改請主管把階段改回');
+  if (!c) throw new Error('找不到案件，已拒絕這次動作');   // 偽造或已刪除的案件編號：不寫任何資料、不建任何檔案
+  if (CLOSED_OK.indexOf(action) >= 0) return;
+  if (c['階段'] === '結案') throw new Error('案件已結案，資料唯讀；如需修改請主管把階段改回');
 }
 
 /* ========== 保固報修 ========== */
