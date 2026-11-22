@@ -9,9 +9,9 @@ const a = "const SS_ID = '1Trazrz1jfOxTaPFA43hb9YFubU5uSaGUZAnD4sWXrCw';";
 if (!code.includes(a)) throw new Error('SS_ID line not found');
 code = code.replace(a, "const SS_ID = PropertiesService.getScriptProperties().getProperty('TEST_SS_ID') || 'TEST_NOT_SET';   // ★ 測試環境：只連測試試算表");
 fs.writeFileSync(outDir + '/TestCode.gs', code);
-// 2) 假資料：Boss 的帳號換成真的（才能登入）；其他人維持假信箱
+// 2) 假資料：Boss 的信箱在建立時換成「執行的人」的帳號（才能登入）；其他人維持假信箱
 const P = T['人員'], pe = P[0].indexOf('Email');
-P.slice(1).forEach(r => { if (r[0] === 'P01') r[pe] = 'pthz@housenaid.com'; else r[pe] = r[pe].replace('@demo', '@test.invalid'); });
+P.slice(1).forEach(r => { if (r[0] === 'P01') r[pe] = '__OWNER__'; else r[pe] = r[pe].replace('@demo', '@test.invalid'); });
 // 試玩版的 PDF 與文件都是瀏覽器裡的假檔：清掉，讓 Google 重新產生
 const L = T['工程日誌'], lh = L[0];
 L.slice(1).forEach(r => ['PDF檔ID', 'PDF時間', 'PDF錯誤'].forEach(c => { const i = lh.indexOf(c); if (i >= 0) r[i] = ''; }));

@@ -23,6 +23,7 @@ const G = {
   Utilities: { getUuid: () => Math.random().toString(16).slice(2) + 'abcdef1234', base64Decode: s => Buffer.from(s, 'base64'), base64Encode: b => Buffer.from(b).toString('base64'),
     newBlob: (c, t, n) => ({ name: n, getAs() { return { setName(x) { this.name = x; return this; } }; }, getName: () => n }),
     formatDate: (d, tz, p) => { const z = new Date(d.getTime() + 8 * 3600e3); const P = n => String(n).padStart(2, '0'); return p.replace('yyyy', z.getUTCFullYear()).replace('MM', P(z.getUTCMonth() + 1)).replace('dd', P(z.getUTCDate())).replace('HH', P(z.getUTCHours())).replace('mm', P(z.getUTCMinutes())).replace('ss', P(z.getUTCSeconds())).replace(/^u$/, String(z.getUTCDay() || 7)); } },
+  Session: { getEffectiveUser: () => ({ getEmail: () => 'pthz@housenaid.com' }) },
   LockService: { getScriptLock: () => ({ waitLock() { }, releaseLock() { } }) }, CacheService: { getScriptCache: () => ({ get: () => null, put() { } }) },
   UrlFetchApp: { fetch: () => ({ getContent: () => [0] }) }, Logger: { log: m => console.log('  [Logger]', String(m).split('\n')[0]) }, HtmlService: {}, ContentService: {}, MimeType: { PDF: 'application/pdf' }
 };

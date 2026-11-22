@@ -18,6 +18,9 @@ function setupTestEnv() {
   const root = DriveApp.createFolder(TEST_ROOT_NAME);
   const ss = SpreadsheetApp.create('浩森系統_測試資料（假資料）');
   DriveApp.getFileById(ss.getId()).moveTo(root);
+  const owner = Session.getEffectiveUser().getEmail();   // 建立的人＝測試環境裡的 Boss
+  if (!/@housenaid\.com$/.test(owner)) throw new Error('請用公司帳號執行：' + owner);
+  TEST_DATA.T['人員'].forEach(r => { for (let i = 0; i < r.length; i++) if (r[i] === '__OWNER__') r[i] = owner; });
   const first = ss.getSheets()[0];
   Object.keys(TEST_DATA.T).forEach(name => {
     const rows = TEST_DATA.T[name], w = rows[0].length;
@@ -48,7 +51,7 @@ function setupTestEnv() {
 /** 在測試環境產生幾份文件 PDF（會議記錄、客戶確認單、週報），讓「文件」頁有 Google 產生的樣本 */
 function makeSampleDocs() {
   if (SS_ID === 'TEST_NOT_SET') throw new Error('請先執行 setupTestEnv');
-  const boss = 'pthz@housenaid.com';
+  const boss = Session.getEffectiveUser().getEmail();
   const meet = readTable_('會議').find(m => m['案件ID'] === 'C1');
   const ci = readTable_('客戶指示').find(x => x['案件ID'] === 'C1' && x['確認狀態'] === '已確認');
   const out = [];
