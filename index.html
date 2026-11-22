@@ -174,6 +174,9 @@ textarea{min-height:84px;resize:vertical}
 .cb{flex:0 0 20px;height:20px;border:1.5px solid var(--line);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:12px}.cb.on{background:var(--ok);border-color:var(--ok);color:#fff}
 .ck.on{background:var(--ok);border-color:var(--ok);color:#fff}
 body.syncing::after{content:'更新中…';position:fixed;top:calc(8px + env(safe-area-inset-top));right:10px;z-index:70;background:rgba(43,38,34,.82);color:#fff;font-size:11px;padding:3px 9px;border-radius:10px;pointer-events:none}
+.pdfst{font-size:12.5px;font-weight:600}.pdfst.ok{color:var(--ok)}.pdfst.run{color:var(--info,#3b6ea8)}.pdfst.warn{color:var(--warn)}.pdfst.bad{color:var(--bad)}
+.pdfst.run::before{content:'';display:inline-block;width:10px;height:10px;margin-right:5px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-1px}
+@keyframes spin{to{transform:rotate(360deg)}}
 .sgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 6px;margin-top:10px}.sgrid div{background:#f7f4ef;border-radius:9px;padding:7px 8px;min-width:0}.sgrid span{display:block;font-size:11px;color:var(--muted)}.sgrid b{font-size:15px;font-weight:600}
 .spad{width:100%;height:170px;border:1.5px dashed var(--line);border-radius:12px;background:#fff;touch-action:none;display:block}
 .plist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
@@ -237,17 +240,19 @@ const S = { home: null, real: null, as: '', cur: null, nav: 0, data: null, tab: 
 const TOKEN_KEY = 'housen_token';
 const READ_ACTIONS = ['home', 'case', 'thumbs', 'pdfView'];   // 只讀；預覽模式只允許這些
 const REV_ACTIONS = ['updateLog', 'saveMeeting', 'saveClientIns', 'savePlanItem', 'saveMilestone', 'saveRepair', 'actClientIns'];
-const SLOW_ACTIONS = ['pdfLog', 'clientPdf', 'reportPdf'];   // 產生 PDF：可能要 1～3 分鐘
+const SLOW_ACTIONS = ['buildLogPdf', 'pdfLog', 'clientPdf', 'reportPdf'];   // 產生 PDF：可能要 1～3 分鐘
 /** 找畫面打開時那筆資料的版本，存檔時一起送出，後端用來判斷是否已被別人改過 */
-function revOf(id) {
-  if (!id || !S.data) return '';
-  for (const k of ['logs', 'plan', 'meetings', 'cins', 'ms', 'repairs']) { const x = (S.data[k] || []).find(y => y.id === id); if (x && x.rev) return x.rev; }
-  return '';
+function recOf(id) {
+  if (!id || !S.data) return null;
+  for (const k of ['logs', 'plan', 'meetings', 'cins', 'ms', 'repairs']) { const x = (S.data[k] || []).find(y => y.id === id); if (x) return x; }
+  return null;
 }
+const revOf = id => { const x = recOf(id); return x && x.rev || ''; };
 const API = async (action, payload) => {
   if (S.as && !READ_ACTIONS.includes(action)) throw '預覽模式只能看，不能存檔';
   const p = Object.assign({ as: S.as }, payload || {});
-  if (REV_ACTIONS.includes(action) && p.id && !p.rev) p.rev = revOf(p.id);
+  // 編輯表單：附上「打開時看到的原值」，伺服器逐欄比對，沒改的欄位保留同事的新內容
+  if (REV_ACTIONS.includes(action) && p.id) { const x = (S.fvSnap && S.fvSnap[p.id]) || recOf(p.id); if (x) { if (!p.rev) p.rev = x.rev; if (!p.orig && x.fv && action !== 'actClientIns') p.orig = x.fv; } }
   // 加速：正在看案件時，存檔請伺服器順便帶回這個案件的最新資料（省掉第二趟讀取）
   if (S.cur && !S.as && !READ_ACTIONS.includes(action) && !SLOW_ACTIONS.includes(action) && !['stats', 'admin'].includes(action)) p._back = S.cur;
   const unwrap = d => { if (d && typeof d === 'object' && '__case' in d) { if (d.__case) S.fresh = { id: d.__id, data: d.__case, at: Date.now() }; return d.__r; } return d; };
@@ -286,7 +291,9 @@ const canCase = () => leader() || ME().role === '行政';
 
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
 function busy(on, msg) { $('#loading').style.display = on ? 'flex' : 'none'; $('#loadmsg').textContent = msg || '處理中…'; }
-function sheet(html) { $('#sheet').innerHTML = '<button class="x" onclick="closeSheet()">✕</button><div class="grab"></div>' + html; $('#sheet').style.display = 'block'; $('#mask').style.display = 'block'; $('#sheet').scrollTop = 0; }
+/** 打開表單時記下每筆資料當下的原值；之後背景更新了畫面資料，送出時仍用「你打開時看到的」比對 */
+function snapFv() { const m = {}; if (S.data) ['logs', 'plan', 'meetings', 'cins', 'ms', 'repairs'].forEach(k => (S.data[k] || []).forEach(x => { if (x.fv) m[x.id] = { fv: x.fv, rev: x.rev }; })); return m; }
+function sheet(html) { if ($('#sheet').style.display !== 'block') S.fvSnap = snapFv(); $('#sheet').innerHTML = '<button class="x" onclick="closeSheet()">✕</button><div class="grab"></div>' + html; $('#sheet').style.display = 'block'; $('#mask').style.display = 'block'; $('#sheet').scrollTop = 0; }
 function closeSheet() { $('#sheet').style.display = 'none'; $('#mask').style.display = 'none'; }
 $('#mask').onclick = closeSheet;
 function guard() { if (preview()) { toast('預覽模式只能看，不能存檔'); return true; } if (ro()) { toast('案件已結案，資料唯讀'); return true; } return false; }
@@ -965,6 +972,25 @@ function logNeedsMe(l) {
     || (l.status === '草稿' && l.by === me) || (l.status === '已簽核' && l.minor && l.signer === me)
     || (l.status === '已簽核' && !l.shares && caseDesigner() === me);
 }
+/** 這篇 PDF 的狀態（簽核與 PDF 分開：簽核完成就算數，PDF 慢慢產） */
+S.pdfJobs = {};
+function pdfStateOf(l) { const j = S.pdfJobs[l.id]; if (j === 'run') return 'run'; if (l.pdfState === 'ready') return 'ready'; if (j && j.err) return 'failed'; return l.pdfState || 'pending'; }
+function pdfLine(l) {
+  const st = pdfStateOf(l), canMake = !ro() && (l.signedBy === ME().id || canShareL() || leader());
+  if (st === 'run') return '<span class="pdfst run">PDF 產生中…（可以先看下一篇，不用等）</span>';
+  if (st === 'ready') return `<span class="pdfst ok">PDF 已完成・${esc(String(l.pdfAt || '').slice(5, 16))}</span>`;
+  if (st === 'failed') { const j = S.pdfJobs[l.id]; return `<span class="pdfst bad">PDF 還沒產生成功${j && j.err ? '：' + esc(j.err) : ''}（簽核已完成）</span>${canMake ? ` <button class="btn ghost sm" data-mkpdf="${l.id}">重試產生 PDF</button>` : ''}`; }
+  return `<span class="pdfst warn">PDF 尚未產生</span>${canMake ? ` <button class="btn ghost sm" data-mkpdf="${l.id}">產生 PDF</button>` : ''}`;
+}
+/** 背景產生 PDF；同一篇同時只跑一個 */
+async function buildPdf(id) {
+  if (S.pdfJobs[id] === 'run') return;
+  S.pdfJobs[id] = 'run'; rerenderLogs();
+  try { await API('buildLogPdf', { id }); S.pdfJobs[id] = 'ok'; }
+  catch (e) { S.pdfJobs[id] = { err: String(e).replace(/^PDF 產生失敗：/, '') }; }
+  if (S.cur) { const cid = S.cur; try { await refreshCase(); } catch (e) { } if (S.cur === cid) rerenderLogs(); }
+}
+function rerenderLogs() { if (S.cur && S.data && S.tab === 'log' && $('#sheet').style.display !== 'block') render(); }
 function logStatusLine(l) {
   const t = s => esc(String(s || '').slice(5, 16).replace('/', '/'));
   if (l.status === '草稿') return l.returnNote ? `<div class="lst bad">被退回修改：${esc(l.returnNote)}</div>` : `<div class="lst mute">草稿，尚未送出</div>`;
@@ -972,7 +998,7 @@ function logStatusLine(l) {
   if (l.status === '待簽核') return `<div class="lst ${l.overdue ? 'bad' : 'warn'}">${l.resign ? '已簽核內容被修改，' : ''}等 ${esc(short(pname(l.signer)))} ${l.resign ? '確認修改' : '簽核'}${l.escal ? '（主管轉 Boss 確認）' : ''}・期限 ${t(l.deadline)}${l.overdue ? '・<b>已逾期</b>' : ''}${l.resign ? '<br>確認前暫停分享，原本的 PDF 不會被覆蓋' : ''}</div>`;
   const sh = l.shares ? `分享操作 ${l.shares} 次（最後 ${esc(short(pname(l.sharedBy)))} ${t(l.sharedAt)}）` : '尚未執行分享';
   const dl = l.downloads ? `・下載 ${l.downloads} 次（最後 ${esc(short(pname(l.downloadedBy)))} ${t(l.downloadedAt)}）` : '';
-  return `<div class="lst ok">已簽核：${esc(short(pname(l.signedBy)))} ${t(l.signedAt)}${l.revisedAt ? '・修訂於 ' + t(l.revisedAt) : ''}<br>${sh}${dl}${l.shares ? '<span class="lnote">（分享操作完成不代表客戶已收到）</span>' : ''}${l.minor ? '<br>簽核後新增了照片（不需重簽）' : ''}</div>`;
+  return `<div class="lst ok">✓ 已簽核：${esc(short(pname(l.signedBy)))} ${t(l.signedAt)}${l.revisedAt ? '・修訂於 ' + t(l.revisedAt) : ''}<br>${pdfLine(l)}<br>${sh}${dl}${l.shares ? '<span class="lnote">（分享操作完成不代表客戶已收到）</span>' : ''}${l.minor ? '<br>簽核後新增了照片（不需重簽）' : ''}</div>`;
 }
 function vLog() {
   const logs = S.data.logs, me = ME().id;
@@ -992,13 +1018,13 @@ function vLog() {
       }
       if (l.status === '已簽核' && canShareL()) btn.push(`<button class="btn pri sm" data-share="${l.id}">分享 PDF</button>`);
     }
-    if (l.status === '已簽核' || l.hasPdf) btn.push(`<button class="btn ghost sm" data-pdfview="${l.id}">查看 PDF</button>`);
+    if (l.hasPdf && (l.status !== '已簽核' || pdfStateOf(l) === 'ready')) btn.push(`<button class="btn ghost sm" data-pdfview="${l.id}">查看 PDF</button>`);
     const chipTxt = l.status === '待簽核' && l.resign ? '修改待確認' : l.status === '草稿' && l.returnNote ? '退回' : l.status;
     return `<div class="lrow ${S.open[l.id] ? 'open' : ''}" data-lid="${l.id}">
       <div class="lhead"><span class="caret">▶</span><span class="ld">${esc(md(l.date))}</span>
         <span class="lgs">${l.trades.map(t => `<span class="tchip" style="background:${tcolor(t)}">${esc(t)}</span>`).join('')}</span>
         ${lateDays >= 1 ? `<span class="late">補登 ${lateDays} 天</span>` : ''}
-        ${l.status !== '已簽核' ? chip(l.overdue ? '逾期未簽' : chipTxt, l.overdue || (l.status === '草稿' && l.returnNote) ? 'c-bad' : LOG_CLS[l.status]) : ''}
+        ${l.status !== '已簽核' ? chip(l.overdue ? '逾期未簽' : chipTxt, l.overdue || (l.status === '草稿' && l.returnNote) ? 'c-bad' : LOG_CLS[l.status]) : chip('✓ 已簽核', 'c-ok') + (pdfStateOf(l) === 'run' ? chip('PDF 產生中', 'c-info') : pdfStateOf(l) === 'ready' ? '' : chip(pdfStateOf(l) === 'failed' ? 'PDF 失敗' : 'PDF 未產生', 'c-warn'))}
         ${logNeedsMe(l) && !pv ? '<span class="idot" title="需要你處理"></span>' : ''}
         ${l.issue ? '<span class="idot" style="background:var(--warn)" title="有問題"></span>' : ''}${li.length ? `<span class="icount">${li.length}</span>` : ''}
         <span class="lby">${esc(short(pname(l.by)))}</span></div>
@@ -1028,19 +1054,21 @@ function vLog() {
   });
   $$('[data-share]').forEach(b => b.onclick = () => sharePdf(b.dataset.share));
   $$('[data-pdfview]').forEach(b => b.onclick = () => viewPdf(b.dataset.pdfview));
+  $$('[data-mkpdf]').forEach(b => b.onclick = () => buildPdf(b.dataset.mkpdf));
   bindIns();
   logs.filter(l => S.open[l.id]).forEach(l => { loadThumbs(l); seeMinor(l); });
 }
-const LOG_MSG = { submitLog: '已送出', confirmLog: '已確認，送主管簽核', signLog: '簽核完成，已產生 PDF', returnLog: '已退回', escalateLog: '已轉給 Boss 確認' };
+const LOG_MSG = { submitLog: '已送出', confirmLog: '已確認，送主管簽核', signLog: '✓ 已簽核。PDF 在背景產生，可以先看下一篇', returnLog: '已退回', escalateLog: '已轉給 Boss 確認' };
 async function logAct(action, id, text) {
   if (guard()) return;
   if (action === 'escalateLog' && !confirm('把這篇轉給 Boss 簽核？（重大異常、費用爭議或重要決策）')) return;
-  busy(true, action === 'signLog' ? '簽核並產生 PDF…' : '處理中…');
+  busy(true, action === 'signLog' ? '簽核中…' : '處理中…');
   try {
     const r = await API(action, { id, text });
     await refreshCase(); closeSheet(); S.open[id] = true; render();
-    toast(r && r.warn ? '已簽核，但 ' + r.warn : LOG_MSG[action]);
+    toast(action === 'signLog' && r && r.already ? '這篇已經簽核過了' : LOG_MSG[action]);
     reloadHome().catch(() => { });
+    if (action === 'signLog') buildPdf(id);   // 不等它：畫面已顯示「已簽核」，PDF 狀態另外顯示
   } catch (e) { toast(e); } finally { busy(false); }
 }
 function seeMinor(l) {
