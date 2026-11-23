@@ -1,7 +1,7 @@
 // 浩森設計工作管理系統 service worker
 // 畫面檔案一律「網路優先」：有網路就拿最新版（略過瀏覽器快取），只有離線或網路太慢時才用手機裡的備份。
 // 所以每次發布都會在下次開啟時生效，不再依賴手動改 VERSION；只有修改這個檔案本身時才需要把 VERSION 加一。
-const VERSION = 'v1.2.0';
+const VERSION = 'v1.2.1';
 const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/logo.png'];
 const NET_WAIT = 4000;   // 網路超過 4 秒沒回應，先用備份顯示
 
