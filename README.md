@@ -1,7 +1,7 @@
 # 浩森設計工作管理系統（PWA）
 
-網址：https://housen-design.github.io/housen-app/
-（`app.housenaid.com` 尚未設定：DNS 沒有這筆紀錄、程式庫也沒有 `CNAME` 檔。第一版先用上面的 GitHub Pages 網址，改網域另案處理。）
+正式網址：https://work.housenaid.com/
+GitHub Pages 原始網址：https://housen-design.github.io/housen-app/（會轉向正式網址）
 擁有者：浩森室內設計（林柏元）
 
 ## 架構
@@ -40,8 +40,7 @@
 
 ## 網域
 
-目前使用 GitHub Pages 預設網址 `https://housen-design.github.io/housen-app/`，Google 登入的「已授權 JavaScript 來源」也是這個網址。
-日後若改用 `app.housenaid.com`，需要：DNS 加 CNAME 指向 `housen-design.github.io`、程式庫加 `CNAME` 檔、GitHub Pages 設定自訂網域，並在 Google Cloud OAuth 用戶端加上新網域。這一版不做。
+正式網址為 `https://work.housenaid.com/`。DNS 的 `work` CNAME 指向 `housen-design.github.io`；程式庫根目錄的 `CNAME` 檔與 GitHub Pages 使用同一個自訂網域。Google Cloud OAuth 用戶端的「已授權 JavaScript 來源」也必須包含 `https://work.housenaid.com`。
 
 ## 已知限制
 

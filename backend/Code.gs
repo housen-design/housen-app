@@ -10,7 +10,7 @@ const PHOTO_DIR = '日誌照片_Images';
 const CONFIRM_DIR = '客戶確認_Images';  // 客戶簽名、LINE 回覆截圖
 const CASE_ROOT = '案件資料夾';        // 案件沒有指定雲端資料夾時，自動建在這裡
 const LOG_PDF_DIR = '工程日誌';        // 每個案件資料夾裡放日誌 PDF 的子資料夾
-const APP_URL = 'https://housen-design.github.io/housen-app/';  // 網站網址（PDF 取 Logo 用）
+const APP_URL = 'https://work.housenaid.com/';  // 網站網址（PDF 取 Logo 用）
 
 /* 日誌狀態與指示狀態（改名時只改這裡） */
 const LS = { DRAFT: '草稿', DESIGNER: '待設計師確認', PENDING: '待簽核', SIGNED: '已簽核' };
@@ -26,7 +26,7 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
-/* ========== PWA 入口（app.housenaid.com 透過 POST 呼叫） ========== */
+/* ========== PWA 入口（work.housenaid.com 透過 POST 呼叫） ========== */
 const CLIENT_ID = '473235039295-dnrf8007tmjrnt93m09e4qli00qa473l.apps.googleusercontent.com'; // Google 登入用戶端 ID
 const DOMAIN = 'housenaid.com';  // 只允許公司網域帳號
 const SESSION_DAYS = 30;         // 登入有效天數
