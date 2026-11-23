@@ -9,7 +9,7 @@
  *   重來：執行 resetTestEnv，只會把「建立時記下 ID、而且裡面有建立時放的標記檔」的那個測試資料夾移到垃圾桶。
  */
 const TEST_DATA = /*__TEST_DATA__*/null;
-const TEST_ROOT_NAME = '浩森系統_測試環境（假資料）';
+const TEST_ROOT_NAME = '浩森系統_測試環境_1123（假資料）';
 const TEST_MARK_NAME = '測試環境標記（請勿刪除）.txt';
 
 function setupTestEnv() {
@@ -25,7 +25,7 @@ function setupTestEnv() {
   // 2) 測試試算表（全部用純文字寫入，日期不會被自動轉格式）
   TEST_DATA.T['人員'].forEach(r => { for (let i = 0; i < r.length; i++) if (r[i] === '__OWNER__') r[i] = owner; });
   const names = Object.keys(TEST_DATA.T);
-  const ss = Sheets.Spreadsheets.create({ properties: { title: '浩森系統_測試資料（假資料）' }, sheets: names.map(n => ({ properties: { title: n } })) });
+  const ss = Sheets.Spreadsheets.create({ properties: { title: '浩森系統_測試資料_1123（假資料）' }, sheets: names.map(n => ({ properties: { title: n } })) });
   try { Drive.Files.update({}, ss.spreadsheetId, null, { addParents: root.id, removeParents: 'root' }); } catch (e) { Logger.log('試算表留在雲端硬碟最上層（移動失敗不影響）：' + e.message); }
   const data = names.map(n => { const rows = TEST_DATA.T[n], w = rows[0].length;
     return { range: "'" + n + "'!A1", values: rows.map(r => { const o = r.slice(0, w); while (o.length < w) o.push(''); return o.map(v => v == null ? '' : String(v)); }) }; });
@@ -73,4 +73,26 @@ function checkIsolation() {
   const seen = (Drive.Files.list({ q: 'trashed = false', fields: 'files(id,name)', pageSize: 100 }).files || []).map(f => f.name);
   Logger.log('這個專案在你的雲端硬碟看得到 ' + seen.length + ' 個檔案：\n' + seen.join('\n'));
   return seen;
+}
+
+
+/** 只清掉 11/22 舊版留下的兩個設定（不碰任何檔案）。新版設定（有標記檔）存在時拒絕。 */
+function clearOldPropsOnly() {
+  if (TEST_PROPS.getProperty('TEST_MARK_ID')) throw new Error('目前是新版測試環境，不清除');
+  const before = { TEST_ROOT_ID: TEST_PROPS.getProperty('TEST_ROOT_ID'), TEST_SS_ID: TEST_PROPS.getProperty('TEST_SS_ID') };
+  TEST_PROPS.deleteProperty('TEST_ROOT_ID'); TEST_PROPS.deleteProperty('TEST_SS_ID');
+  Logger.log('已清除舊設定（檔案沒動）：' + JSON.stringify(before) + '\n剩下的設定鍵：' + Object.keys(TEST_PROPS.getProperties()).join(','));
+}
+
+/** 唯讀盤點：列出這個程式看得到的所有檔案，標示屬於哪個測試根資料夾。不建立、不修改、不刪除。 */
+function inspectVisibleFilesReadOnly() {
+  const fs = Drive.Files.list({ q: 'trashed = false', pageSize: 200, fields: 'files(id,name,mimeType,parents,createdTime,owners(emailAddress))' }).files || [];
+  const byId = {}; fs.forEach(f => byId[f.id] = f);
+  const newRoot = TEST_PROPS.getProperty('TEST_ROOT_ID');
+  const top = f => { let c = f, path = [f.name]; for (let i = 0; i < 12; i++) { const p = (c.parents || [])[0]; if (!byId[p]) return { root: c, path: path }; c = byId[p]; path.unshift(c.name); } return { root: c, path: path }; };
+  const groups = {};
+  fs.sort((a, b) => a.createdTime < b.createdTime ? -1 : 1).forEach(f => { const t = top(f), k = t.root.id === newRoot ? '新測試根資料夾' : ('其他：' + t.root.name + ' ' + t.root.id);
+    (groups[k] = groups[k] || []).push(f.createdTime + ' ｜ ' + t.path.join(' / ') + ' ｜ ' + f.mimeType.replace('application/vnd.google-apps.', 'google-') + ' ｜ ' + (f.owners || []).map(o => o.emailAddress).join(',')); });
+  Object.keys(groups).forEach(k => Logger.log(k + '（' + groups[k].length + ' 個）\n' + groups[k].join('\n')));
+  Logger.log('設定鍵：' + Object.keys(TEST_PROPS.getProperties()).join(','));
 }

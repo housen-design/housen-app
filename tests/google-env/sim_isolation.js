@@ -131,7 +131,7 @@ r = call(m, { action: 'actIns', token: PF, payload: { id: I, act: 'reply', text:
 r = call(m, { action: 'signLog', token: BOSS, payload: { id: L } }); ok('Boss 簽核（Boss 可簽任何日誌）', r.ok && sheet('工程日誌').find(l => l['日誌ID'] === L)['日誌狀態'] === '已簽核', r.error);
 r = call(m, { action: 'buildLogPdf', token: BOSS, payload: { id: L } });
 const pdfId = sheet('工程日誌').find(l => l['日誌ID'] === L)['PDF檔ID'];
-ok('Google 產生 PDF，存在測試根資料夾／案件資料夾／南屯王公館／工程日誌', r.ok && pdfId && (() => { let p = files[pdfId].parents[0], path = []; while (p && p !== 'root') { path.unshift(files[p].name); p = files[p].parents[0]; } return path.join('/'); })() === '浩森系統_測試環境（假資料）/案件資料夾/南屯王公館｜老屋翻新/工程日誌', r.error);
+ok('Google 產生 PDF，存在測試根資料夾／案件資料夾／南屯王公館／工程日誌', r.ok && pdfId && (() => { let p = files[pdfId].parents[0], path = []; while (p && p !== 'root') { path.unshift(files[p].name); p = files[p].parents[0]; } return path.join('/'); })() === '浩森系統_測試環境_1123（假資料）/案件資料夾/南屯王公館｜老屋翻新/工程日誌', r.error);
 const html = files[pdfId].content;
 ok('PDF 內容含案件名稱、2 張照片、指示、回報、頁尾', /南屯王公館/.test(html) && (html.match(/<img[^>]+data:image\/jpeg/g) || []).length >= 2 && /收邊請拍近照給我看/.test(html) && /已補拍近照，收邊平整/.test(html) && /狀態截至/.test(html));
 r = call(m, { action: 'pdfLog', token: BOSS, payload: { id: L } }); ok('手機下載：拿到 PDF 檔', r.ok && r.data.data && /\.pdf$/.test(r.data.name), r.error);
