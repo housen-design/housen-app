@@ -1,42 +1,49 @@
-// 在電腦上模擬 setupTestEnv（假的 Google 服務），確認匯入後系統能正常運作
-const fs = require('fs');
-const src = fs.readFileSync('out/TestCode.gs', 'utf8') + '\n' + fs.readFileSync('out/TestEnv.gs', 'utf8');
-const props = {}; const sheets = {}; const files = {}; let fid = 0;
-function sheetObj(name) {
-  const v = sheets[name];
-  return { getDataRange: () => ({ getDisplayValues: () => v.map(r => v[0].map((_, i) => r[i] == null ? '' : String(r[i]))), getValues: () => v.map(r => r.slice()) }),
-    getRange: (r, c, nr, nc) => ({ setNumberFormat() { return this; }, setValues(rows) { rows.forEach((row, i) => { v[r - 1 + i] = v[r - 1 + i] || []; row.forEach((x, j) => v[r - 1 + i][c - 1 + j] = x); }); return this; },
-      getValues: () => [v[r - 1].slice(c - 1, c - 1 + (nc || 1))], setValue: x => { v[r - 1][c - 1] = x; } }),
-    getLastColumn: () => v[0].length, getLastRow: () => v.length, appendRow: row => v.push(row.slice()), setFrozenRows() { }, getName: () => name };
-}
-const ss = { getId: () => 'TESTSS', getUrl: () => 'u', getSheets: () => [{ name: '工作表1' }], insertSheet: n => { sheets[n] = [[]]; return sheetObj(n); }, deleteSheet() { }, getSheetByName: n => sheets[n] ? sheetObj(n) : null };
-const folders = {};
-function folder(path) { return folders[path] = folders[path] || { getId: () => path, getUrl: () => 'f:' + path, getName: () => path.split('/').pop(),
-  getFoldersByName: n => { const p = path + '/' + n; let d = false; return { hasNext: () => !d && !!folders[p], next: () => { d = true; return folders[p]; } }; },
-  createFolder: n => folder(path + '/' + n), getFilesByName: n => ({ hasNext: () => false }),
-  createFile: b => { const id = 'F' + (++fid); files[id] = { name: b.name || b.getName && b.getName(), dir: path }; return { getId: () => id, getUrl: () => 'file:' + id, getName: () => files[id].name, getBlob: () => ({ getBytes: () => [1, 2] }), setTrashed() { } }; },
-  setTrashed() { } }; }
-const G = {
-  PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
-  SpreadsheetApp: { create: () => ss, openById: id => { if (id !== 'TESTSS') throw new Error('開到不是測試試算表：' + id); return ss; } },
-  DriveApp: { createFolder: n => folder('/' + n), getFileById: id => ({ moveTo() { }, getParents: () => ({ next: () => folder('/' + '浩森系統_測試環境（假資料）') }), setTrashed() { } }), getFolderById: id => folder(id) },
-  Utilities: { getUuid: () => Math.random().toString(16).slice(2) + 'abcdef1234', base64Decode: s => Buffer.from(s, 'base64'), base64Encode: b => Buffer.from(b).toString('base64'),
-    newBlob: (c, t, n) => ({ name: n, getAs() { return { setName(x) { this.name = x; return this; } }; }, getName: () => n }),
-    formatDate: (d, tz, p) => { const z = new Date(d.getTime() + 8 * 3600e3); const P = n => String(n).padStart(2, '0'); return p.replace('yyyy', z.getUTCFullYear()).replace('MM', P(z.getUTCMonth() + 1)).replace('dd', P(z.getUTCDate())).replace('HH', P(z.getUTCHours())).replace('mm', P(z.getUTCMinutes())).replace('ss', P(z.getUTCSeconds())).replace(/^u$/, String(z.getUTCDay() || 7)); } },
-  Session: { getEffectiveUser: () => ({ getEmail: () => 'pthz@housenaid.com' }) },
-  LockService: { getScriptLock: () => ({ waitLock() { }, releaseLock() { } }) }, CacheService: { getScriptCache: () => ({ get: () => null, put() { } }) },
-  UrlFetchApp: { fetch: () => ({ getContent: () => [0] }) }, Logger: { log: m => console.log('  [Logger]', String(m).split('\n')[0]) }, HtmlService: {}, ContentService: {}, MimeType: { PDF: 'application/pdf' }
+// 在電腦上模擬：建立測試環境、清舊設定、唯讀盤點、真實環境用的拒絕測試與完整流程（假的 Google 服務）
+// 用法：node tests/google-env/sim_setup.js（先執行 make_testenv.js 產生 out/）
+const fs = require('fs'), path = require('path');
+const OUT = path.join(__dirname, 'out');
+const src = ['TestShim.gs', 'TestEnv.gs', 'TestCode.gs'].map(f => fs.readFileSync(path.join(OUT, f), 'utf8')).join('\n');
+const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i ? '  ' + String(i).slice(0, 110) : '')); };
+const M = require('./gmock')(src);
+const { G, files, props, snapProd, prod0 } = M;
+// 部署後的網址：模擬「對自己的測試網址送 HTTP 要求」＝開一個新的執行跑 doPost
+const URL = 'https://script.google.com/macros/s/TEST/exec';
+const logs = [];
+G.Logger = { log: m => logs.push(String(m)) };
+G.ScriptApp.getService = () => ({ getUrl: () => URL });
+const fetch0 = G.UrlFetchApp.fetch;
+G.UrlFetchApp.fetch = (u, o) => {
+  if (u === URL) { const out = M.boot().doPost({ postData: { contents: o.payload } }); return { getContentText: () => JSON.stringify(out), getResponseCode: () => 200 }; }
+  return fetch0(u, o);
 };
-// 第一次執行：SS_ID 還沒設定
-let m = {}; new Function(...Object.keys(G), 'exp', src + ';exp.setup=setupTestEnv;')(...Object.values(G), m);
-m.setup();
-console.log('匯入資料表', Object.keys(sheets).length, '張；照片', Object.keys(files).length, '個；TEST_SS_ID =', props.TEST_SS_ID);
-// 第二次執行（像部署後的網頁應用程式）：SS_ID 讀到測試試算表
-m = {}; new Function(...Object.keys(G), 'exp', src + ';exp.run_=run_;exp.SS=SS_ID;exp.setup=setupTestEnv;')(...Object.values(G), m);
-console.log('後端連到', m.SS);
-const boss = 'pthz@housenaid.com';
-const h = m.run_(boss, 'home', {}); console.log('Boss 工作總表：', h.me.name, '待辦', h.items.length, '件；案件', h.cases.length);
-const c = m.run_(boss, 'case', { id: 'C1' });
-const l20 = c.logs.find(l => l.date === '2026/11/20'); console.log('11/20 日誌：', l20.status, '簽核人', l20.signer, '照片', l20.photos.length, '指示', c.ins.filter(i => i.logId === l20.id).length);
-try { m.setup(); } catch (e) { console.log('重複執行 setup 被擋：', e.message.slice(0, 20)); }
-console.log('photo path sample', sheets['日誌照片'][1][3], '→ 資料夾', Object.values(files)[0].dir);
+G.UrlFetchApp.fetchAll = reqs => reqs.map(q => G.UrlFetchApp.fetch(q.url, q));
+const boot = () => { const m = {}; new Function(...Object.keys(G), 'exp', src + ';Object.assign(exp,{setupTestEnv,resetTestEnv,checkIsolation,clearOldPropsOnly,inspectVisibleFilesReadOnly,setWebAppUrl,liveRejectTests,runFlowTest});')(...Object.values(G), m); return m; };
+
+// 舊版只留下兩個設定：clearOldPropsOnly 只清這兩個，不碰檔案
+props.TEST_ROOT_ID = 'OLD_ROOT'; props.TEST_SS_ID = 'OLD_SS';
+const nFiles = Object.keys(files).length;
+boot().clearOldPropsOnly();
+ok('只清舊設定：兩個舊編號清掉、檔案一個都沒動', !props.TEST_ROOT_ID && !props.TEST_SS_ID && Object.keys(files).length === nFiles);
+boot().setupTestEnv();
+ok('建立測試環境：根資料夾、標記檔、試算表、設定都在', props.TEST_ROOT_ID && props.TEST_MARK_ID && props.TEST_MARK_TOKEN && props.TEST_SS_ID);
+const root = props.TEST_ROOT_ID;
+const under = id => { let p = id; for (let i = 0; i < 8 && p; i++) { if (p === root) return true; p = (files[p] || {}).parents && files[p].parents[0]; } return false; };
+ok('所有新檔案都在測試根資料夾底下', Object.values(files).filter(f => f.app && f.id !== root).every(f => under(f.id)));
+ok('試算表名稱與資料夾名稱帶 1123', /_1123（假資料）$/.test(files[root].name) && /_1123（假資料）$/.test(files[props.TEST_SS_ID].name));
+let e = null; try { boot().setupTestEnv(); } catch (x) { e = x.message; }
+ok('已經建立過再執行 → 拒絕，不會再建一份', /已經建立過/.test(e || ''));
+e = null; try { boot().clearOldPropsOnly(); } catch (x) { e = x.message; }
+ok('新版環境存在時 clearOldPropsOnly 拒絕', /新版測試環境/.test(e || ''));
+logs.length = 0; boot().inspectVisibleFilesReadOnly();
+ok('唯讀盤點：全部列在「新測試根資料夾」', logs.some(l => /^新測試根資料夾/.test(l)) && !logs.some(l => /^其他/.test(l)), logs[0]);
+boot().setWebAppUrl();
+ok('記下測試網址', props.TEST_WEBAPP_URL === URL);
+logs.length = 0;
+const rej = boot().liveRejectTests();
+ok('拒絕測試（模擬）全部通過', rej, logs.filter(l => /^FAIL/.test(l)).join(' / ') || logs.slice(-1)[0]);
+logs.length = 0;
+const flow = boot().runFlowTest();
+ok('完整流程（模擬）全部通過', flow, logs.filter(l => /^FAIL/.test(l)).join(' / ') || logs.slice(-1)[0]);
+ok('全部過程正式資料沒被動到', snapProd() === prod0);
+console.log('\n' + R.filter(Boolean).length + '/' + R.length + ' PASS');
+process.exit(R.every(Boolean) ? 0 : 1);

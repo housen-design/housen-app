@@ -1,6 +1,9 @@
 # 試玩版：日誌簽核 → PDF → 下載，核對內容；簽核後立刻關頁再開
 import asyncio, base64
 from playwright.async_api import async_playwright
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pw import W, A, DEMO, SITE, SHOTS, ROOT
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 STUB="""window.__saved=[];Object.defineProperty(window,'claude',{value:{use:async n=>n==='downloads'?{save:async ({filename,data})=>{const b=new Uint8Array(await data.arrayBuffer());let s='';for(let i=0;i<b.length;i+=32768)s+=String.fromCharCode.apply(null,b.subarray(i,i+32768));window.__saved.push({filename,b64:btoa(s)});}}:null}});"""
@@ -11,7 +14,7 @@ async def main():
         b=await pw.chromium.launch(); c=await b.new_context(viewport={'width':390,'height':844},device_scale_factor=2)
         await c.add_init_script("localStorage.setItem('housen_tip','1');"+STUB)
         p=await c.new_page(); errs=[]; p.on('pageerror',lambda e:errs.append(str(e))); p.on('popup',lambda x:errs.append('多開了頁面 '+x.url))
-        await p.goto('http://localhost:9300/index.html'); await p.wait_for_timeout(800); await p.click('[data-e="boss@demo"]'); await p.wait_for_timeout(1500)
+        await p.goto('http://localhost:'+DEMO+'/index.html'); await p.wait_for_timeout(800); await p.click('[data-e="boss@demo"]'); await p.wait_for_timeout(1500)
         await p.click('[data-case] >> text=南屯王公館'); await p.wait_for_timeout(900); await p.click('[data-tab=log]'); await p.wait_for_timeout(500)
         lid=await p.evaluate("S.data.logs.find(l=>l.date==='2026/11/20').id")
         # Boss 下指示 → 蘋芳回報
@@ -30,7 +33,7 @@ async def main():
         await p.click(f'[data-lact="signLog|{lid}"]'); await p.wait_for_timeout(60)
         await p.close()
         p=await c.new_page(); p.on('pageerror',lambda e:errs.append(str(e))); p.on('popup',lambda x:errs.append('多開了頁面 '+x.url))
-        await p.goto('http://localhost:9300/index.html'); await p.wait_for_timeout(1500)
+        await p.goto('http://localhost:'+DEMO+'/index.html'); await p.wait_for_timeout(1500)
         await p.click('[data-case] >> text=南屯王公館'); await p.wait_for_timeout(1200); await p.click('[data-tab=log]'); await p.wait_for_timeout(600)
         await p.evaluate(f"S.open['{lid}']=true;render()"); await p.wait_for_timeout(300)
         card=await p.inner_text(f'[data-lid="{lid}"]')
@@ -48,7 +51,7 @@ async def main():
         await p.click('#dvdl'); await p.wait_for_timeout(6000)
         saved=await p.evaluate("window.__saved.map(x=>({n:x.filename,b:x.b64}))")
         ok('從預覽下載到 PDF 檔', len(saved)==1 and base64.b64decode(saved[0]['b'])[:5]==b'%PDF-', saved[0]['n'] if saved else '')
-        if saved: open('/tmp/qa/shots/demo_log.pdf','wb').write(base64.b64decode(saved[0]['b']))
+        if saved: open(SHOTS+'/demo_log.pdf','wb').write(base64.b64decode(saved[0]['b']))
         await p.click('#dvx'); await p.evaluate('closeSheet()'); await p.wait_for_timeout(300)
         # 分享 PDF → 下載
         await p.click(f'[data-share="{lid}"]') if await p.query_selector(f'[data-share="{lid}"]') else await p.click(f'[data-lid="{lid}"] >> text=分享 PDF')

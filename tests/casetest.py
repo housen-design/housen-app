@@ -1,5 +1,5 @@
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
 R=[]
 def ok(n,c,i=''): R.append(c); print(('PASS' if c else 'FAIL'),n,i)
@@ -12,12 +12,10 @@ async def main():
     async with async_playwright() as pw:
         b=await pw.chromium.launch()
         # 修改前畫面（待發布版本）
-        p=await open_app(b,'9001','9101','kx@test.local',tip=False); await p.click('[data-case] >> text=QA樣本乙'); await p.wait_for_timeout(600)
-        await p.screenshot(path='shots/case_before.png',full_page=True)
         W,A='9002','9102'
         # 設計師編輯自己負責的案件
         p=await open_app(b,W,A,'kx@test.local',tip=False); await p.click('[data-case] >> text=QA樣本乙'); await p.wait_for_timeout(600)
-        await p.screenshot(path='shots/case_after_view.png',full_page=True)
+        await p.screenshot(path=SHOTS+'/case_after_view.png',full_page=True)
         ok('負責設計師看得到「編輯」', await p.is_visible('#editCase'))
         await p.click('#editCase'); await p.wait_for_timeout(300)
         ok('非可看金額者沒有金額欄', not await p.query_selector('#f_fee'))
@@ -26,10 +24,10 @@ async def main():
         await p.fill('#f_d4','2027-02-15'); await p.fill('#f_drive','https://example.com/not-a-folder'); await p.click('#f_go'); await p.wait_for_timeout(700)
         ok('非資料夾網址被擋下', '/folders/' in await p.inner_text('#toast'), await p.inner_text('#toast'))
         await p.fill('#f_drive','https://drive.google.com/drive/folders/ABC123'); await p.fill('#f_line','line-li'); 
-        await p.screenshot(path='shots/case_after_form.png',full_page=True)
+        await p.screenshot(path=SHOTS+'/case_after_form.png',full_page=True)
         await p.click('#f_go'); await p.wait_for_timeout(900)
         r=row(A,'C2'); ok('只寫入有改動的欄位', r['預計開工日']=='2026/12/01' and r['預計完工日']=='2027/02/15' and r['客戶LINE']=='line-li' and r['Drive資料夾'].endswith('ABC123') and r['最後修改人']=='P04', await p.inner_text('#toast'))
-        await p.screenshot(path='shots/case_after_saved.png',full_page=True)
+        await p.screenshot(path=SHOTS+'/case_after_saved.png',full_page=True)
         # 不是自己的案件
         await p.click('#backbtn'); await p.wait_for_timeout(400); await p.click('[data-case] >> text=QA樣本甲'); await p.wait_for_timeout(600)
         ok('非負責設計師沒有「編輯」', not await p.is_visible('#editCase'))

@@ -1,7 +1,6 @@
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def rows(n):
@@ -31,12 +30,12 @@ async def main():
         await p.click('[data-rep]'); await p.wait_for_timeout(300)
         await p.click('#rs button[data-v="已完成"]'); await p.fill('#rr','調整鉸鍊'); await p.click('#rgo'); await p.wait_for_timeout(900)
         ok('報修處理完成', rows('保固報修')[-1]['狀態']=='已完成' and rows('保固報修')[-1]['完成日'])
-        await p.screenshot(path='shots/m5a_case.png',full_page=True)
+        await p.screenshot(path=SHOTS+'/m5a_case.png',full_page=True)
         boss=await open_app(b,W,A,'boss@test.local',tip=False)
         await boss.click('#stats'); await boss.wait_for_timeout(900)
         t=await boss.inner_text('#main'); ok('統計頁顯示人員與暫定說明', '許凱翔' in t and '暫定' in t)
         await boss.click('[data-sr="prev"]'); await boss.wait_for_timeout(900); ok('切換上個月', '2026/10/01' in await boss.inner_text('#top'))
-        await boss.screenshot(path='shots/m5a_stats.png',full_page=True)
+        await boss.screenshot(path=SHOTS+'/m5a_stats.png',full_page=True)
         await boss.click('#backbtn'); await boss.wait_for_timeout(600)
         await boss.click('[data-case] >> text=QA樣本甲'); await boss.wait_for_timeout(900)
         await boss.click('[data-st="施工"]'); await boss.wait_for_timeout(1200)

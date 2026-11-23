@@ -1,7 +1,6 @@
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def rows(n):
@@ -30,8 +29,8 @@ async def main():
         await p.click('[data-at="sugg"]'); await p.wait_for_timeout(900)
         await p.click('[data-sg]'); await p.fill('#sgn','加到冷氣查驗'); await p.click('#sgyes'); await p.wait_for_timeout(900)
         ok('採納建議', rows('範本建議')[-1]['狀態']=='已採納' and rows('範本建議')[-1]['處理人']=='P01')
-        await p.screenshot(path='shots/m5b_sugg.png',full_page=True)
-        await p.click('[data-at="tpl"]'); await p.wait_for_timeout(800); await p.screenshot(path='shots/m5b_tpl.png',full_page=True)
+        await p.screenshot(path=SHOTS+'/m5b_sugg.png',full_page=True)
+        await p.click('[data-at="tpl"]'); await p.wait_for_timeout(800); await p.screenshot(path=SHOTS+'/m5b_tpl.png',full_page=True)
         # 套用範本時不帶入停用的工序
         post('pf@test.local','applyTemplate',{'caseId':'C1'})
         names=[x['工序名稱'] for x in rows('進度計畫') if x['案件ID']=='C1']

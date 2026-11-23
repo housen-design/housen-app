@@ -1,3 +1,8 @@
+import os
+TESTS = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(TESTS)
+OUT = os.environ.get('HOUSEN_OUT', os.path.join(TESTS, 'out')); SHOTS = os.path.join(OUT, 'shots'); os.makedirs(SHOTS, exist_ok=True)
+W = os.environ.get('HOUSEN_WEB', '9002'); A = os.environ.get('HOUSEN_API', '9102')
+DEMO = os.environ.get('HOUSEN_DEMO', '9300'); SITE = os.environ.get('HOUSEN_SITE', '9400')
 import asyncio, json, urllib.request
 from playwright.async_api import async_playwright
 def api(port, path): return urllib.request.urlopen(f'http://localhost:{port}{path}').read().decode()

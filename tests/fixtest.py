@@ -1,7 +1,6 @@
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def rows(n):
@@ -60,7 +59,7 @@ async def main():
         await pf.evaluate(f"S.copen={{'{ci}':true}};render()"); await pf.wait_for_timeout(300)
         await pf.click(f'[data-cdone="{ci}"]'); await pf.click('#cxgo'); await pf.wait_for_timeout(1000)
         ok('8 負責設計師確認完成', [x for x in rows('客戶指示') if x['指示ID']==ci][0]['執行狀態']=='已完成')
-        await pf.screenshot(path='shots/fix_cins.png',full_page=True)
+        await pf.screenshot(path=SHOTS+'/fix_cins.png',full_page=True)
         # 過期畫面
         await p.evaluate(f"S.tab='log';render()"); await p.wait_for_timeout(300)
         post('pf@test.local','updateLog',{'id':lid,'date':'2026/11/19','trades':['木工'],'text':'蘋芳剛改的'})

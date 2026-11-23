@@ -1,7 +1,7 @@
 // 用法：node server.js <port> <backend Code.gs>
 const http=require('http');
-const [port,backend]=process.argv.slice(2);
-const H=require('./harness')(backend);
+const [port,backend,flag]=process.argv.slice(2);
+const H=require('./harness')(backend,{preview:flag==='--preview'});
 let fail=false;const log=[];let delays=[];   // 模擬某個請求比較慢回來
 http.createServer((req,res)=>{
   res.setHeader('Access-Control-Allow-Origin','*');

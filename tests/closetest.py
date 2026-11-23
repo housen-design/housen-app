@@ -1,8 +1,7 @@
 # 正式版流程（假資料後端）：簽核後立刻關頁，再打開
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def rows(n):

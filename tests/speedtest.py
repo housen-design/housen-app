@@ -1,7 +1,8 @@
 import asyncio, sys, json, urllib.request
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
+R=[]
+def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def log(): return json.loads(urllib.request.urlopen(f'http://localhost:{A}/log').read())
 def clear(): urllib.request.urlopen(f'http://localhost:{A}/clearlog').read()
 async def main():
@@ -13,13 +14,15 @@ async def main():
         await p.click('#backbtn'); await p.wait_for_timeout(1200)
         clear(); await p.click('[data-case] >> text=QA樣本甲'); 
         await p.wait_for_timeout(80); vis = await p.is_visible('#loading'); txt=await p.inner_text('#top')
-        print('第二次開案件：80ms 內已顯示內容', 'QA樣本甲' in txt, '有轉圈', vis)
+        ok('第二次開案件：80ms 內已顯示內容（快取）', 'QA樣本甲' in txt and not vis)
         await p.wait_for_timeout(1200); print('  背景更新', [x.get('action') for x in log()])
         await p.click('[data-tab=client]'); await p.wait_for_timeout(500)
         clear(); await p.evaluate("planAct('saveClientIns',{caseId:S.cur,text:'速度測試',date:'2026/11/20'},'ok')"); await p.wait_for_timeout(1500)
-        acts=[x.get('action') for x in log()]; print('存一筆客戶指示的請求', acts)
-        print('畫面已更新', '速度測試' in await p.inner_text('#main'))
-        clear(); await p.click('#backbtn'); await p.wait_for_timeout(80); print('返回工作總表 80ms 內顯示', '工作總表' in await p.inner_text('#top'))
-        await p.reload(); await p.wait_for_timeout(150); print('重新整理 150ms 內顯示快取', '工作總表' in await p.inner_text('#top'))
-        print('errors', p.errs); await b.close()
+        acts=[x.get('action') for x in log()]; ok('存一筆客戶指示只需一趟請求', acts==['saveClientIns'], acts)
+        ok('存檔後畫面已更新', '速度測試' in await p.inner_text('#main'))
+        clear(); await p.click('#backbtn'); await p.wait_for_timeout(80); ok('返回工作總表 80ms 內顯示', '工作總表' in await p.inner_text('#top'))
+        await p.reload(); await p.wait_for_timeout(150); ok('重新整理 150ms 內顯示快取', '工作總表' in await p.inner_text('#top'))
+        ok('沒有頁面錯誤', not p.errs, p.errs); await b.close()
+    print(f'\n{sum(R)}/{len(R)} PASS')
+    sys.exit(0 if all(R) else 1)
 asyncio.run(main())

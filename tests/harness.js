@@ -1,6 +1,6 @@
 // 獨立測試資料＋模擬 Google 服務，用來跑真正的後端程式（不連正式試算表）
 const fs=require('fs');
-module.exports=function(backendPath){
+module.exports=function(backendPath,opt){opt=opt||{};
 const T={
  '人員':[['人員ID','姓名','Email','職稱','系統角色','可看金額','可看績效','在職'],['P01','林柏元','boss@test.local','','Boss','Y','Y','Y'],['P02','林妙娟','rita@test.local','','行政','Y','Y','Y'],['P03','施蘋芳','pf@test.local','','主管','N','N','Y'],['P04','許凱翔','kx@test.local','','設計師','N','N','Y'],['P05','施明媛','candy@test.local','','行政','Y','Y','Y']],
  '工種清單':[['工種','色碼','排序','啟用'],['木工','#8A6A4B','1','Y'],['水電','#5B6F8C','2','Y']],
@@ -35,21 +35,23 @@ function sheet(n){const v=T[n];return{
  getRange:(r,c,nr,nc)=>({getValues:()=>[v[r-1].slice(c-1,c-1+nc)],setValue:x=>{v[r-1][c-1]=x}}),
  getLastColumn:()=>v[0].length, appendRow:row=>v.push(row.slice()), deleteRow:r=>v.splice(r-1,1)}}
 let uid=0;const G={};
-G.SpreadsheetApp={openById:()=>({getSheetByName:sheet})};
-G.Utilities={getUuid:()=>'id'+(++uid)+'xxxxxxxxxxxx',formatDate:(d,tz,p)=>{const z=new Date(d.getTime()+8*3600e3);const P=n=>String(n).padStart(2,'0');return p.replace('yyyy',z.getUTCFullYear()).replace('MM',P(z.getUTCMonth()+1)).replace('dd',P(z.getUTCDate())).replace('HH',P(z.getUTCHours())).replace('mm',P(z.getUTCMinutes())).replace('ss',P(z.getUTCSeconds())).replace(/^u$/,String(z.getUTCDay()||7))},
+G.SpreadsheetApp={flush(){},openById:()=>({getSheetByName:sheet})};
+G.Utilities={sleep:ms=>{if(globalThis.ON_SLEEP&&ms>=1500)return globalThis.ON_SLEEP(ms);Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,Math.min(ms,3000));},getUuid:()=>'id'+(++uid)+'xxxxxxxxxxxx',formatDate:(d,tz,p)=>{const z=new Date(d.getTime()+8*3600e3);const P=n=>String(n).padStart(2,'0');return p.replace('yyyy',z.getUTCFullYear()).replace('MM',P(z.getUTCMonth()+1)).replace('dd',P(z.getUTCDate())).replace('HH',P(z.getUTCHours())).replace('mm',P(z.getUTCMinutes())).replace('ss',P(z.getUTCSeconds())).replace(/^u$/,String(z.getUTCDay()||7))},
  base64Encode:b=>Buffer.from(b).toString('base64'),base64Decode:s=>Buffer.from(s,'base64'),
- newBlob:()=>({getAs:()=>({setName:n=>({name:n})})})};
+ newBlob:(c,t,n)=>({name:n,getAs:()=>({setName:x=>({name:x})})})};
 const files={FILE_L1:{name:'工程日誌_QA樣本甲_2026-11-18_L1.pdf'}};let fid=0;
 const mkFile=(id)=>({getId:()=>id,getName:()=>files[id].name,getUrl:()=>'https://drive.google.com/file/d/'+id+'/view',getBlob:()=>({getBytes:()=>Buffer.from('%PDF-1.4 '+id)}),setTrashed:()=>{files[id].trashed=true},isTrashed:()=>!!files[id].trashed});
-const folder={getFoldersByName:()=>({hasNext:()=>true,next:()=>folder}),createFolder:()=>folder,getUrl:()=>'https://drive.google.com/drive/folders/QA',getFilesByName:()=>({hasNext:()=>false}),createFile:(b)=>{if(globalThis.FAIL_CREATE)throw new Error("模擬建檔失敗");const id='GEN'+(++fid);files[id]={name:b.name};return mkFile(id)}};
+const folder={getFoldersByName:()=>({hasNext:()=>true,next:()=>folder}),createFolder:()=>folder,getUrl:()=>'https://drive.google.com/drive/folders/QA',getFilesByName:()=>({hasNext:()=>false}),createFile:(b)=>{if(globalThis.FAIL_CREATE)throw new Error("模擬建檔失敗");if(globalThis.FAIL_AFTER!=null){if(globalThis.FAIL_AFTER<=0)throw new Error('模擬雲端中途失敗');globalThis.FAIL_AFTER--;}const id='GEN'+(++fid);files[id]={name:b.name};if(globalThis.ON_CREATE){const f=globalThis.ON_CREATE;globalThis.ON_CREATE=null;f(id);}return mkFile(id)}};
 G.DriveApp={getFileById:id=>files[id]?mkFile(id):{getParents:()=>({next:()=>folder})},getFolderById:id=>{if(id==='BAD')throw new Error('no');return Object.assign({},folder,{getUrl:()=>'https://drive.google.com/drive/folders/'+id})}};
 G.LockService={getScriptLock:()=>({waitLock(){},releaseLock(){}})};
-G.CacheService={getScriptCache:()=>({get:()=>'AAAA',put(){}})};
+const cache={};G.CacheService={getScriptCache:()=>({get:k=>(k in cache?cache[k]:null),put:(k,v)=>{cache[k]=String(v)},remove:k=>{delete cache[k]}})};
 G.UrlFetchApp={fetch:()=>({getContent:()=>[0]})};
 G.PropertiesService={getScriptProperties:()=>({getProperty:()=>'s',setProperty(){}})};
 G.Logger={log(){}};
-const src=fs.readFileSync(backendPath,'utf8');
+let src=fs.readFileSync(backendPath,'utf8');
+// 部分畫面測試要用「Boss 切換身分」：只在測試副本打開，正式後端維持 false
+if(opt.preview){if(src.indexOf('const TEST_MODE = false;')<0)throw new Error('後端找不到 TEST_MODE 設定');src=src.replace('const TEST_MODE = false;','const TEST_MODE = true;');}
 const m={};
 new Function(...Object.keys(G),'exp',src+';exp.run_=run_;exp.reset=()=>{_people=null;}')(...Object.values(G),m);
-return {run:(...a)=>{m.reset();return m.run_(...a)},T,files};
+return {run:(...a)=>{m.reset();return m.run_(...a)},T,files,cache};
 };

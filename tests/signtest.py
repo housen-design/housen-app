@@ -1,7 +1,6 @@
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def rows(n):
@@ -33,7 +32,7 @@ async def main():
         await p.wait_for_timeout(5500)
         card=await p.inner_text(f'[data-lid="{l1}"]')
         ok('三、PDF 好了自動變成「PDF 已完成」', 'PDF 已完成' in card and 'PDF 產生中' not in card, card.replace('\n',' | ')[:160])
-        await p.screenshot(path='shots/sign_pdf.png', full_page=True)
+        await p.screenshot(path=SHOTS+'/sign_pdf.png', full_page=True)
         n=len([x for x in log() if x['action']=='buildLogPdf'])
         ok('三、每篇只產生一次 PDF', n==2, str(n))
         # 重按簽核（例如兩支手機）→ 告知已簽好，不報錯

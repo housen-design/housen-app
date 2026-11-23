@@ -1,2 +1,4 @@
 tests/google-env/out/
 shots/
+tests/out/
+__pycache__/

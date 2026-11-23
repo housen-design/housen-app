@@ -1,7 +1,6 @@
 import asyncio, sys, json, urllib.request
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def delay(action,id,ms): urllib.request.urlopen(f'http://localhost:{A}/delay?action={action}&id={id}&ms={ms}').read()

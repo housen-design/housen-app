@@ -1,6 +1,11 @@
 // 產生 Google 獨立測試環境的 Apps Script 檔：TestCode.gs（後端，改連測試試算表）＋ TestEnv.gs（建立測試試算表與假資料）
 const fs = require('fs');
-const [,, codePath, seedPath, outDir] = process.argv;
+const path = require('path');
+const ROOT = path.join(__dirname, '..', '..');
+const [,, codePath = path.join(ROOT, 'backend', 'Code.gs'), seedPath = path.join(ROOT, 'tests', 'out', 'demo-seed.json'), outDir = path.join(__dirname, 'out')] = process.argv;
+fs.mkdirSync(outDir, { recursive: true });
+fs.mkdirSync(path.dirname(seedPath), { recursive: true });
+if (!fs.existsSync(seedPath)) require('child_process').execFileSync('node', [path.join(ROOT, 'tests', 'demo', 'seed.js'), codePath, seedPath]);
 const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
 const T = seed.T, files = seed.files;
 // 1) 後端：同一份程式，改成透過「隔離層」存取（只能碰測試試算表與測試資料夾）
@@ -8,6 +13,7 @@ let code = fs.readFileSync(codePath, 'utf8');
 const rep = (from, to, n) => { const c = code.split(from).length - 1; if (c !== n) throw new Error('預期 ' + n + ' 處，實際 ' + c + '：' + from); code = code.split(from).join(to); };
 rep("const SS_ID = '1Trazrz1jfOxTaPFA43hb9YFubU5uSaGUZAnD4sWXrCw';", "const SS_ID = PropertiesService.getScriptProperties().getProperty('TEST_SS_ID') || 'TEST_NOT_SET';   // ★ 測試環境：只連測試試算表", 1);
 rep('SpreadsheetApp.openById(SS_ID)', 'TSheets.openById(SS_ID)', 1);
+rep('SpreadsheetApp.flush()', 'TSheets.flush()', 2);
 rep('DriveApp.getFileById(SS_ID).getParents().next()', 'testRoot_()', 2);
 // 案件資料夾：網址一定要在測試根資料夾底下，否則拒絕（不默默改用預設資料夾）
 rep("  if (m) { try { return DriveApp.getFolderById(m[1]); } catch (e) { } }", "  if (m) return TDrive.getFolderById(m[1]);   // ★ 測試環境：不在測試資料夾底下就拒絕", 1);

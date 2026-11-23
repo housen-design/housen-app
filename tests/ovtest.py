@@ -1,7 +1,6 @@
 import asyncio, sys, json, urllib.request
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def post(email,action,payload):
@@ -23,7 +22,7 @@ async def main():
         ok('顯示與計畫的差異', '與計畫差異' in txt)
         ok('我交辦還沒回報的清單', '我交辦、還沒回報' in txt and '下週提供系統櫃報價' in txt)
         ok('沒有日誌的案件也看得到', '沒有日誌' in txt or '日誌 ' in txt)
-        await p.screenshot(path='shots/ov_boss.png',full_page=True)
+        await p.screenshot(path=SHOTS+'/ov_boss.png',full_page=True)
         await p.click('[data-ovcase^="C1"]'); await p.wait_for_timeout(700)
         ok('點案件直接打開最新日誌', await p.is_visible('.lrow.open'))
         p2=await open_app(b,W,A,'kx@test.local',tip=False)

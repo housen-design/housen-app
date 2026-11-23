@@ -1,8 +1,7 @@
 # 追加減連動：客戶確認影響工期 → 提醒設計師 → 調整工序時連結那筆指示（或記錄不需調整）
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def rows(n):
@@ -39,7 +38,7 @@ async def main():
         ok('另一筆記錄「不需調整」並保留原因', [r for r in rows('客戶指示') if r['指示ID']==ci2][0]['進度調整']=='不需調整')
         h=post('pf@test.local','home',{})['data']
         ok('處理完後提醒消失', not any(i['kind']=='cins' and i.get('status')=='待調整進度' for i in h['items']))
-        await p.screenshot(path='shots/sched_client.png', full_page=True)
+        await p.screenshot(path=SHOTS+'/sched_client.png', full_page=True)
         print('errors', p.errs); await b.close()
     print(f'\n{sum(R)}/{len(R)} PASS')
 asyncio.run(main())

@@ -1,7 +1,6 @@
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def rows(n):
@@ -13,7 +12,7 @@ async def main():
         b=await pw.chromium.launch()
         p=await open_app(b,W,A,'pf@test.local',tip=False)
         await p.click('[data-case] >> text=QA樣本甲'); await p.wait_for_timeout(500); await p.click('[data-tab=client]'); await p.wait_for_timeout(300)
-        await p.screenshot(path='shots/client_empty.png')
+        await p.screenshot(path=SHOTS+'/client_empty.png')
         # 臨時客戶指示（影響費用）
         await p.click('#fab'); await p.wait_for_timeout(200)
         await p.click('#csrc button[data-v="LINE"]'); await p.fill('#ct','主臥衣櫃改成到頂，門片改灰色'); await p.click('#cimp button[data-v="Y"]'); await p.fill('#ca','18000'); await p.fill('#cdy','2')
@@ -25,7 +24,7 @@ async def main():
         await p.click('#cgo'); await p.wait_for_timeout(300); ok('沒簽名不能登記', '簽名' in await p.inner_text('#toast'))
         box=await p.locator('#spad').bounding_box()
         await p.mouse.move(box['x']+30,box['y']+60); await p.mouse.down(); await p.mouse.move(box['x']+150,box['y']+100,steps=8); await p.mouse.move(box['x']+260,box['y']+50,steps=8); await p.mouse.up()
-        await p.screenshot(path='shots/client_sign.png')
+        await p.screenshot(path=SHOTS+'/client_sign.png')
         await p.click('#cgo'); await p.wait_for_timeout(800)
         x=[r for r in rows('客戶指示') if r['指示ID']==x['指示ID']][0]
         ok('簽名存檔並鎖定', x['鎖定']=='Y' and x['確認方式']=='現場簽名' and x['客戶簽名'].startswith('客戶確認_Images/簽名.'), x['客戶簽名'])
@@ -39,7 +38,7 @@ async def main():
         await p.click(f'[data-mrev="{m["會議ID"]}"]'); await p.wait_for_timeout(700)
         ok('設計師核對摘要', rows('會議')[-1]['核對人']=='P03')
         r=post('pf@test.local','saveMeeting',{'caseId':'C1','id':m['會議ID'],'name':'泥作完成階段驗收','summary':'改過'}); ok('摘要修改後需重新核對', r['ok'] and rows('會議')[-1]['核對人']=='')
-        await p.screenshot(path='shots/client_list.png',full_page=True)
+        await p.screenshot(path=SHOTS+'/client_list.png',full_page=True)
         # PDF
         r=post('pf@test.local','clientPdf',{'meetingId':m['會議ID']}); ok('會議記錄 PDF', r['ok'] and r['data']['name'].startswith('會議記錄_'), r.get('error',''))
         r=post('pf@test.local','clientPdf',{'meetingId':m['會議ID']}); docs=[d for d in rows('文件紀錄') if d['來源ID']==m['會議ID']]

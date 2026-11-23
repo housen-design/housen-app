@@ -1,6 +1,9 @@
 # 各種待辦：先把篩選／分頁弄成「不對」的狀態，再從工作總表點進去，要直接看到那一筆
 import asyncio
 from playwright.async_api import async_playwright
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pw import W, A, DEMO, SITE, SHOTS, ROOT
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 async def go(p, who):
@@ -11,7 +14,7 @@ async def main():
         b=await pw.chromium.launch(); c=await b.new_context(viewport={'width':390,'height':844})
         await c.add_init_script("localStorage.setItem('housen_tip','1')")
         p=await c.new_page(); errs=[]; p.on('pageerror',lambda e:errs.append(str(e)))
-        await p.goto('http://localhost:9300/index.html'); await p.wait_for_timeout(800); await p.click('[data-e="pf@demo"]'); await p.wait_for_timeout(1500)
+        await p.goto('http://localhost:'+DEMO+'/index.html'); await p.wait_for_timeout(800); await p.click('[data-e="pf@demo"]'); await p.wait_for_timeout(1500)
         kinds=await p.evaluate("S.home.items.map(i=>i.kind+':'+i.id)"); print('  蘋芳待辦', kinds)
         for kind, sel in [('cins','[data-gocins]'),('wr','[data-gowr]'),('ins','[data-goins]'),('plan','[data-goprog*="|plan|"]'),('ms','[data-goprog*="|ms|"]')]:
             el=p.locator(sel).first

@@ -1,7 +1,6 @@
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def rows(n):
@@ -25,7 +24,7 @@ async def main():
         docs=[x for x in rows('文件紀錄') if x['案件ID']=='C1']; ok('文件紀錄登記週報與履歷', {'週報','工程履歷'} <= set(x['文件類型'] for x in docs))
         p=await open_app(b,W,A,'pf@test.local',tip=False); await p.click('[data-case] >> text=QA樣本甲'); await p.wait_for_timeout(500); await p.click('[data-tab=docs]'); await p.wait_for_timeout(300)
         t=await p.inner_text('#main'); ok('文件頁列出週報與履歷並可分類', '週報' in t and '工程履歷' in t and await p.query_selector('[data-dt="週報"]'))
-        await p.screenshot(path='shots/docs.png',full_page=True)
+        await p.screenshot(path=SHOTS+'/docs.png',full_page=True)
         print('errors', p.errs)
         await b.close()
     print(f'\n{sum(R)}/{len(R)} PASS')

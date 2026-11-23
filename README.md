@@ -1,6 +1,7 @@
 # 浩森工作｜浩森設計工作管理系統（PWA）
 
-網址：https://app.housenaid.com
+網址：https://housen-design.github.io/housen-app/
+（`app.housenaid.com` 尚未設定：DNS 沒有這筆紀錄、程式庫也沒有 `CNAME` 檔。第一版先用上面的 GitHub Pages 網址，改網域另案處理。）
 擁有者：浩森室內設計（林柏元）
 
 ## 架構
@@ -23,7 +24,7 @@
 
 角色：系統角色為 `Boss`、`主管` 可下指示、指派待辦、管理工種；`行政` 可新增案件；其他人可寫日誌、修改任何日誌（系統記錄最後修改人）、管理自己的待辦。
 
-`Code.gs` 的 `TEST_MODE = true` 時，Boss 首頁可切換「看某某的畫面」（唯讀）。正式上線改成 `false`。
+正式版 `Code.gs` 固定 `TEST_MODE = false`：不提供「切換身分」。試玩版（`tests/demo`）只在自己的副本裡打開，不靠正式後端。
 
 ## 更新流程
 
@@ -39,7 +40,8 @@
 
 ## 網域
 
-`app.housenaid.com` 在 housenaid.com 的 DNS 設一筆 CNAME 指向 GitHub Pages。`CNAME` 檔案不要刪。
+目前使用 GitHub Pages 預設網址 `https://housen-design.github.io/housen-app/`，Google 登入的「已授權 JavaScript 來源」也是這個網址。
+日後若改用 `app.housenaid.com`，需要：DNS 加 CNAME 指向 `housen-design.github.io`、程式庫加 `CNAME` 檔、GitHub Pages 設定自訂網域，並在 Google Cloud OAuth 用戶端加上新網域。這一版不做。
 
 ## 已知限制
 
@@ -80,3 +82,29 @@
 - 外部檢查 10 項修正：跨案權限、結案在寫入鎖內檢查、開案權限（暫定主管、行政）、金額可看≠可改（暫定 Boss、行政）、PDF 先建新檔再回收舊檔、多人編輯不互蓋、簽名畫布、長時間產檔、客戶指示執行追蹤、照片說明修改與刪除隨儲存生效。
 - 加速：存檔時一起帶回案件最新資料（少一趟）；手機記住上次內容，打開時先顯示再背景更新。
 - 部署時跑 checkSchema → fixSchema：會補「客戶指示」的執行人、執行期限、執行狀態、處理回報、回報時間、回報人、完成確認人、完成時間；「日誌照片」的說明修改人、說明修改時間。
+
+## 自動測試（全部假資料，不連任何 Google 服務）
+
+在程式庫根目錄執行一個指令：
+
+```
+python3 tests/run_all.py
+```
+
+需要 Node.js 18+、Python 3.9+、`pip install playwright && python3 -m playwright install chromium`。
+任何一組失敗，結束代碼就不是 0；最後列出每一組的通過數（也存到 `tests/out/summary.json`），截圖在 `tests/out/shots/`。
+只跑某幾組：`python3 tests/run_all.py blockers mobiletest`。
+
+| 組 | 內容 |
+|---|---|
+| 後端 | `cgpt`（外部檢查）、`mergetest`（多人同時編輯）、`blockers`（上線前阻擋項目：切換身分、分享紀錄、同時產 PDF、照片失敗、重送） |
+| 畫面 | 各功能的手機操作流程；`mobiletest` 檢查 320×568、390×844、844×390 |
+| 試玩版 | 瀏覽器裡跑同一份 `Code.gs` 的試玩網站與 PDF |
+| Google 測試環境 | `tests/google-env`：由同一份 `Code.gs` 產生隔離版（只換試算表與雲端硬碟的存取），模擬 Google 驗證隔離 |
+
+## 2026-11-23 上線前修正（後端 v4.9）
+- 正式版關閉切換身分（`TEST_MODE = false`）；安裝後可以橫放（manifest 不再鎖直向）。
+- 分享／下載紀錄由後端檢查：只接受 share、download；日誌已簽核、PDF 存在且是最新、操作者有分享權限。
+- 同一篇日誌同時只會有一個人在產 PDF，另一個人等候並使用同一份；產檔期間有新增指示或回報，完成後維持「待更新」；被取代的 PDF 一律收回，不留孤兒檔。文件 PDF 的紀錄也在鎖內更新。
+- 日誌照片先全部上傳成功才寫入試算表；中途失敗會收回已上傳的照片，資料完全不變。同一次送出被重送（例如斷線重按）不會重複新增。
+- 這版不需要新增欄位（沿用 v4.8 的欄位）。

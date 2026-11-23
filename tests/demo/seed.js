@@ -3,7 +3,7 @@ const fs = require('fs'), path = require('path');
 const makeEngine = require('./engine.js');
 const src = fs.readFileSync(process.argv[2], 'utf8');
 // 取用測試環境的資料表欄位（與正式欄位一致）
-const hs = fs.readFileSync('/tmp/qa/harness.js', 'utf8');
+const hs = fs.readFileSync(path.join(__dirname, '..', 'harness.js'), 'utf8');
 const T = eval('(' + hs.slice(hs.indexOf('const T={') + 8, hs.indexOf('\n};') + 2) + ')');
 for (const n of Object.keys(T)) if (!/^範本_/.test(n)) T[n] = [T[n][0]];
 T['範本_工序'] = [T['範本_工序'][0],
@@ -34,7 +34,7 @@ T['案件'].push(
   row({ 案件ID: 'C4', 案件名稱: '大里張宅｜毛胚屋', 客戶姓名: '張先生', 地址: '台中市大里區（示範）', 類型: '住宅', 來源: 'IG', 負責設計師: 'P03', 階段: '提案', 狀態: '進行中', 建立日期: '2026/11/16', 提案日: '2026/11/28' }),
   row({ 案件ID: 'C5', 案件名稱: '太平李宅｜局部翻修', 客戶姓名: '李先生', 地址: '台中市太平區（示範）', 類型: '住宅', 來源: '舊客戶', 負責設計師: 'P03', 階段: '完工', 狀態: '進行中', 建立日期: '2026/06/01', 工程約簽約日: '2026/07/10', 預計開工日: '2026/07/20', 預計完工日: '2026/09/30', 實際完工日: '2026/10/05', 工程金額: '680000' }));
 const files = {};
-const E = makeEngine(src, T, files, fs.readFileSync('/home/claude/housen-app/icons/logo.png').toString('latin1'));
+const E = makeEngine(src, T, files, fs.readFileSync(path.join(__dirname, '..', '..', 'icons', 'logo.png')).toString('latin1'));
 const EM = { P01: 'boss@demo', P02: 'rita@demo', P03: 'pf@demo', P04: 'kx@demo', P05: 'candy@demo' };
 const run = (p, a, d) => { try { return E.run(EM[p], a, d); } catch (e) { throw new Error(a + ' as ' + p + ': ' + e.message); } };
 const ph = n => fs.readFileSync(path.join(__dirname, 'photos', n)).toString('base64');

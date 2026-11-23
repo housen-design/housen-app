@@ -1,7 +1,6 @@
 import asyncio, sys, json, urllib.request, urllib.parse
-sys.path.insert(0,'/tmp/qa')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from pw import *
-W,A='9002','9102'
 R=[]
 def ok(n,c,i=''): R.append(bool(c)); print(('PASS' if c else 'FAIL'),n,i)
 def rows(n):
@@ -18,7 +17,7 @@ async def main():
         b=await pw.chromium.launch()
         p=await open_app(b,W,A,'pf@test.local',tip=False)
         ok('負責設計師工作總表出現漏填', '日誌未填' in await p.inner_text('.tl'))
-        await p.screenshot(path='shots/miss_home.png',full_page=True)
+        await p.screenshot(path=SHOTS+'/miss_home.png',full_page=True)
         await p.click('[data-miss$="2026/11/16"]'); await p.wait_for_timeout(300)
         await p.click('#mnone'); await p.wait_for_timeout(300); ok('無施工要寫原因', '原因' in await p.inner_text('#toast'))
         await p.fill('#mwhy','等系統櫃進場'); await p.click('#mnone'); await p.wait_for_timeout(900)
@@ -29,7 +28,7 @@ async def main():
         h=post('pf@test.local','home',{})['data']; ok('補寫後不再算漏填', '2026/11/17' not in [i['date'] for i in h['items'] if i['kind']=='miss'])
         boss=await open_app(b,W,A,'boss@test.local',tip=False); t=await boss.inner_text('#main')
         ok('Boss 總覽顯示漏填天數', '漏填' in t)
-        await boss.screenshot(path='shots/miss_boss.png',full_page=True)
+        await boss.screenshot(path=SHOTS+'/miss_boss.png',full_page=True)
         print('errors', p.errs+boss.errs)
         await b.close()
     print(f'\n{sum(R)}/{len(R)} PASS')
