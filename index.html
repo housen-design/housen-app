@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>浩森工作</title>
+<title>浩森設計工作管理系統</title>
 <meta name="theme-color" content="#1f2329">
 
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="浩森工作">
+<meta name="apple-mobile-web-app-title" content="浩森設計工作管理系統">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -1756,7 +1756,7 @@ function installTip() {
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const how = ios ? '在 Safari 點下方「分享」<b>⬆︎</b>，選「<b>加入主畫面</b>」' : '在瀏覽器選單選「<b>安裝應用程式</b>」或「<b>加到主畫面</b>」';
   setTimeout(() => { const x = $('#tipx'); if (x) x.onclick = () => { localStorage.setItem('housen_tip', 1); x.parentElement.remove(); }; }, 0);
-  return `<div class="tip"><span class="tx" id="tipx">✕</span>把「浩森工作」加到手機主畫面，之後像 App 一樣直接開：<br>${how}</div>`;
+  return `<div class="tip"><span class="tx" id="tipx">✕</span>把「浩森設計工作管理系統」加到手機主畫面，之後像 App 一樣直接開：<br>${how}</div>`;
 }
 
 /* 新版偵測：除了 service worker 更新，也比對網站上的 index.html 是否和目前開著的不同（不必手動改版本號） */

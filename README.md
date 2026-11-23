@@ -1,4 +1,4 @@
-# 浩森工作｜浩森設計工作管理系統（PWA）
+# 浩森設計工作管理系統（PWA）
 
 網址：https://housen-design.github.io/housen-app/
 （`app.housenaid.com` 尚未設定：DNS 沒有這筆紀錄、程式庫也沒有 `CNAME` 檔。第一版先用上面的 GitHub Pages 網址，改網域另案處理。）
