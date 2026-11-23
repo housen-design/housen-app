@@ -68,7 +68,7 @@ if missing: raise SystemExit('缺少：' + '、'.join(missing))
 try:
     # ---------- 1. 後端（真正的 Code.gs ＋ 模擬 Google 服務） ----------
     print('【後端】', flush=True)
-    for t in ['cgpt.js', 'mergetest.js', 'blockers.js']:
+    for t in ['cgpt.js', 'mergetest.js', 'blockers.js', 'schematest.js']:
         run('後端', t[:-3], ['node', os.path.join(TESTS, t), BACKEND])
 
     # ---------- 2. 畫面（Playwright 模擬手機 ＋ 假資料後端，每組重開一次，資料回到初始） ----------
